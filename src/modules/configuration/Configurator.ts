@@ -10,7 +10,7 @@ export class Configurator {
 		this.output = vscode.window.createOutputChannel('Smart Commit Pilot');
 	}
 
-	async runSetupWizard(): Promise<void> {
+	async setupVendor(): Promise<void> {
 		const venderInfo = await this.captureVenderInfo();
 		if (!venderInfo) {
 			return;
@@ -36,6 +36,15 @@ export class Configurator {
 		}
 
 		return { provider, baseUrl, apiKey };
+	}
+
+	getPrompt(): string {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		return config.get<string>('prompt', '');
+	}
+
+	async setupPrompt(): Promise<void> {
+		await vscode.commands.executeCommand('workbench.action.openSettings', 'smartCommitPilot.prompt');
 	}
 
 	private async captureVenderInfo(): Promise<{ provider: string; baseUrl: string; apiKey: string } | undefined> {

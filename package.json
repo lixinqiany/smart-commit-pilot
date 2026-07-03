@@ -26,6 +26,11 @@
         "title": "Generate Commit Message",
         "category": "Smart Commit Pilot",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "smart-commit-pilot.configurePrompt",
+        "title": "Setup Prompt",
+        "category": "Smart Commit Pilot"
       }
     ],
     "menus": {
@@ -50,6 +55,11 @@
           "type": "string",
           "default": "",
           "description": "The Base URL of the selected provider."
+        },
+        "smartCommitPilot.prompt": {
+          "type": "string",
+          "default": "",
+          "description": "Prompt Template for generating commit messages."
         }
       }
     }

@@ -11,14 +11,32 @@
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
+  "extensionDependencies": [
+    "vscode.git"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "smart-commit-pilot.setup",
         "title": "Setup Provider",
         "category": "Smart Commit Pilot"
+      },
+      {
+        "command": "smart-commit-pilot.generateCommitMessage",
+        "title": "Generate Commit Message",
+        "category": "Smart Commit Pilot",
+        "icon": "$(sparkle)"
       }
     ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "smart-commit-pilot.generateCommitMessage",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Smart Commit Pilot",
       "properties": {

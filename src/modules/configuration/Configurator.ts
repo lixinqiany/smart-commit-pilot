@@ -21,8 +21,21 @@ export class Configurator {
 		// write to the user-level settings.json for all projects on the PC
 		await config.update('provider', provider, vscode.ConfigurationTarget.Global);
 		await config.update('baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
-		
+
 		await this.context.secrets.store(API_KEY_SECRET, apiKey);
+	}
+
+	async getBaseURLandSecrets(): Promise<{ provider: string; baseUrl: string; apiKey: string } | undefined> {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		const provider = config.get<string>('provider');
+		const baseUrl = config.get<string>('baseUrl');
+		const apiKey = await this.context.secrets.get(API_KEY_SECRET);
+
+		if (!provider || !baseUrl || !apiKey) {
+			return undefined;
+		}
+
+		return { provider, baseUrl, apiKey };
 	}
 
 	private async captureVenderInfo(): Promise<{ provider: string; baseUrl: string; apiKey: string } | undefined> {

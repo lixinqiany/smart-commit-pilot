@@ -14,10 +14,27 @@
   "contributes": {
     "commands": [
       {
-        "command": "smart-commit-pilot.helloWorld",
-        "title": "Hello World"
+        "command": "smart-commit-pilot.setup",
+        "title": "Setup Provider",
+        "category": "Smart Commit Pilot"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Smart Commit Pilot",
+      "properties": {
+        "smartCommitPilot.provider": {
+          "type": "string",
+          "enum": ["OpenAI", "Anthropic"],
+          "default": "OpenAI",
+          "description": "SupportedReal Word Large Language Model Vender."
+        },
+        "smartCommitPilot.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "The Base URL of the selected provider."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",

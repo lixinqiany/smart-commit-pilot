@@ -93,7 +93,16 @@ export class Configurator {
 	}
 
 	private async captureVenderInfo(): Promise<{ provider: string; baseUrl: string; apiKey: string } | undefined> {
-		const providerInput = await vscode.window.showQuickPick([Venders.OpenAI, Venders.Anthropic], {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		const currentProvider = config.get<string>('provider');
+		const currentBaseUrl = config.get<string>('baseUrl');
+		const currentApiKey = await this.context.secrets.get(API_KEY_SECRET);
+
+		// put the already-configured provider first so it's pre-highlighted in the list
+		const providerOptions = [Venders.OpenAI, Venders.Anthropic].sort((a, b) =>
+			a === currentProvider ? -1 : b === currentProvider ? 1 : 0
+		);
+		const providerInput = await vscode.window.showQuickPick(providerOptions, {
 			placeHolder: 'Select a provider',
 		});
 
@@ -105,8 +114,8 @@ export class Configurator {
 
 		const baseUrlInput = await vscode.window.showInputBox({
 			prompt: 'Enter the Base URL',
-			// default base url of the selected provider
-			value: DEFAULT_BASE_URLS[provider],
+			// reuse the previously configured base url for this provider, otherwise fall back to its default
+			value: provider === currentProvider && currentBaseUrl ? currentBaseUrl : DEFAULT_BASE_URLS[provider],
 			validateInput: (value) => (value.trim() ? null : 'Base URL is required!!!'),
 		});
 		const baseUrl = baseUrlInput?.trim();
@@ -115,11 +124,15 @@ export class Configurator {
 		}
 
 		const apiKeyInput = await vscode.window.showInputBox({
-			prompt: 'Enter the API Key',
+			prompt: currentApiKey ? 'Enter the API Key (leave blank to keep the existing one)' : 'Enter the API Key',
 			password: true,
-			validateInput: (value) => (value.trim() ? null : 'API Key is required!!!'),
+			validateInput: (value) => (value.trim() || currentApiKey ? null : 'API Key is required!!!'),
 		});
-		const apiKey = apiKeyInput?.trim();
+		// undefined means the user cancelled, as opposed to submitting an empty string to keep the existing key
+		if (apiKeyInput === undefined) {
+			return undefined;
+		}
+		const apiKey = apiKeyInput.trim() || currentApiKey;
 		if (!apiKey) {
 			return undefined;
 		}

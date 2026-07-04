@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { DEFAULT_BASE_URLS, Venders } from './configuration.constants';
+import { AdaptorFactory } from '../adaptor/AdaptorFactory';
 
 const API_KEY_SECRET = 'smartCommitPilot.apiKey';
 
@@ -23,6 +24,8 @@ export class Configurator {
 		await config.update('baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
 
 		await this.context.secrets.store(API_KEY_SECRET, apiKey);
+
+		await this.setupModel();
 	}
 
 	async getBaseURLandSecrets(): Promise<{ provider: string; baseUrl: string; apiKey: string } | undefined> {
@@ -45,6 +48,48 @@ export class Configurator {
 
 	async setupPrompt(): Promise<void> {
 		await vscode.commands.executeCommand('workbench.action.openSettings', 'smartCommitPilot.prompt');
+	}
+
+	getModel(): string {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		return config.get<string>('model', '');
+	}
+
+	async setupModel(): Promise<void> {
+		const venderInfo = await this.getBaseURLandSecrets();
+		if (!venderInfo) {
+			vscode.window.showErrorMessage('Smart Commit Pilot: please setup the provider first.');
+			return;
+		}
+		const { provider, baseUrl, apiKey } = venderInfo;
+
+		let models: string[];
+		try {
+			models = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: 'Fetching available models...' },
+				async () => {
+					const adaptor = AdaptorFactory.create(provider as Venders, baseUrl, apiKey);
+					return adaptor.listModels();
+				}
+			);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			vscode.window.showErrorMessage(`Smart Commit Pilot: failed to fetch models. ${message}`);
+			return;
+		}
+
+		if (models.length === 0) {
+			vscode.window.showWarningMessage('Smart Commit Pilot: no models available for the configured provider.');
+			return;
+		}
+
+		const model = await vscode.window.showQuickPick(models, { placeHolder: 'Select a model' });
+		if (!model) {
+			return;
+		}
+
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		await config.update('model', model, vscode.ConfigurationTarget.Global);
 	}
 
 	private async captureVenderInfo(): Promise<{ provider: string; baseUrl: string; apiKey: string } | undefined> {

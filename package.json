@@ -31,6 +31,11 @@
         "command": "smart-commit-pilot.configurePrompt",
         "title": "Setup Prompt",
         "category": "Smart Commit Pilot"
+      },
+      {
+        "command": "smart-commit-pilot.selectModel",
+        "title": "Select Model",
+        "category": "Smart Commit Pilot"
       }
     ],
     "menus": {
@@ -63,6 +68,11 @@
           "type": "string",
           "default": "",
           "description": "Prompt Template for generating commit messages."
+        },
+        "smartCommitPilot.model": {
+          "type": "string",
+          "default": "",
+          "description": "Selected model of the configured provider"
         }
       }
     }

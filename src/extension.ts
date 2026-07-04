@@ -23,6 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('smart-commit-pilot.setup', () => configurator.setupVendor()),
 		vscode.commands.registerCommand('smart-commit-pilot.configurePrompt', () => configurator.setupPrompt()),
+		vscode.commands.registerCommand('smart-commit-pilot.selectModel', () => configurator.setupModel()),
 		vscode.commands.registerCommand('smart-commit-pilot.generateCommitMessage', () => {
 			vscode.window.showInformationMessage('Smart Commit Pilot: commit message generation is not implemented yet.');
 		})

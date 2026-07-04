@@ -2,6 +2,10 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { Configurator } from './modules/configuration/Configurator';
+import { AdaptorFactory } from './modules/adaptor/AdaptorFactory';
+import { Venders } from './modules/configuration/configuration.constants';
+import { OpenAIAdaptor } from './modules/adaptor/OpenAIAdaptor';
+import { AnthropicAdaptor } from './modules/adaptor/AnthropicAdaptor';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -10,6 +14,9 @@ export function activate(context: vscode.ExtensionContext) {
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "smart-commit-pilot" is now active!');
+
+	AdaptorFactory.register(Venders.OpenAI, OpenAIAdaptor);
+    AdaptorFactory.register(Venders.Anthropic, AnthropicAdaptor);
 
 	const configurator = new Configurator(context);
 

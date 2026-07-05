@@ -6,6 +6,8 @@ import { AdaptorFactory } from './modules/adaptor/AdaptorFactory';
 import { Venders } from './modules/configuration/configuration.constants';
 import { OpenAIAdaptor } from './modules/adaptor/OpenAIAdaptor';
 import { AnthropicAdaptor } from './modules/adaptor/AnthropicAdaptor';
+import { GitService } from './modules/git/GitService';
+import { CommitGenerator } from './modules/git/CommitGenerator';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -19,14 +21,15 @@ export function activate(context: vscode.ExtensionContext) {
     AdaptorFactory.register(Venders.Anthropic, AnthropicAdaptor);
 
 	const configurator = new Configurator(context);
+	const commitGenerator = new CommitGenerator(new GitService(), configurator);
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('smart-commit-pilot.setup', () => configurator.setupVendor()),
 		vscode.commands.registerCommand('smart-commit-pilot.configurePrompt', () => configurator.setupPrompt()),
 		vscode.commands.registerCommand('smart-commit-pilot.selectModel', () => configurator.setupModel()),
-		vscode.commands.registerCommand('smart-commit-pilot.generateCommitMessage', () => {
-			vscode.window.showInformationMessage('Smart Commit Pilot: commit message generation is not implemented yet.');
-		})
+		vscode.commands.registerCommand('smart-commit-pilot.generateCommitMessage', (sourceControl?: vscode.SourceControl) =>
+			commitGenerator.run(sourceControl?.rootUri)
+		)
 	);
 }
 

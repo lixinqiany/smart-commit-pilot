@@ -7,6 +7,9 @@ import { MessageRole } from '../adaptor/unified-protocols/request';
 
 const MAX_OUTPUT_TOKENS = 1024;
 
+const PROMPT_PREFIX =
+    'You are a commit message generator. Given a git diff of staged changes, write a single commit message following the Conventional Commits specification, validated against @commitlint/config-conventional rules.';
+
 export class CommitGenerator {
     constructor(
         private readonly gitService: GitService,
@@ -49,7 +52,7 @@ export class CommitGenerator {
                     const adaptor = AdaptorFactory.create(venderInfo.provider as Venders, venderInfo.baseUrl, venderInfo.apiKey);
                     const response = await adaptor.createMessage({
                         model,
-                        system: this.configurator.getPrompt(),
+                        system: `${PROMPT_PREFIX}\n\n${this.configurator.getPrompt()}`,
                         max_output_tokens: MAX_OUTPUT_TOKENS,
                         messages: [{ role: MessageRole.USER, content: diff }],
                     });

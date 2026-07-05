@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { DEFAULT_BASE_URLS, Venders } from './configuration.constants';
+import { DEFAULT_BASE_URLS, DEFAULT_COMMIT_PROMPT, Venders } from './configuration.constants';
 import { AdaptorFactory } from '../adaptor/AdaptorFactory';
 
 const API_KEY_SECRET = 'smartCommitPilot.apiKey';
@@ -43,7 +43,8 @@ export class Configurator {
 
 	getPrompt(): string {
 		const config = vscode.workspace.getConfiguration('smartCommitPilot');
-		return config.get<string>('prompt', '');
+		const prompt = config.get<string>('prompt', '');
+		return prompt.trim() || DEFAULT_COMMIT_PROMPT;
 	}
 
 	async setupPrompt(): Promise<void> {

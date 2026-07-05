@@ -3,6 +3,23 @@
   "displayName": "SmartCommitPilot",
   "description": "Automatically generate commit message powered by the state-of-art LLMs.",
   "version": "0.0.1",
+  "publisher": "michael-yu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lixinqiany/smart-commit-pilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lixinqiany/smart-commit-pilot/issues"
+  },
+  "keywords": [
+    "git",
+    "commit",
+    "AI",
+    "OpenAI",
+    "Anthropic",
+    "conventional commits"
+  ],
   "engines": {
     "vscode": "^1.125.0"
   },

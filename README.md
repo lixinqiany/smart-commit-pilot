@@ -1,71 +1,64 @@
-# smart-commit-pilot README
+# SmartCommitPilot
 
-This is the README for your extension "smart-commit-pilot". After writing up a brief description, we recommend including the following sections.
+Generate Conventional-Commits-style commit messages from your staged changes, powered by OpenAI or Anthropic — right from the Source Control panel.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- **One-click generation** — click the sparkle (✨) icon in the Source Control panel's title bar and SmartCommitPilot writes a commit message straight into the commit input box.
+- **Bring your own provider** — works with either OpenAI or Anthropic. You supply the API key and base URL, so it also works with OpenAI/Anthropic-compatible proxies and self-hosted gateways.
+- **Conventional Commits by default** — the built-in prompt asks the model for a `type(scope): subject` header plus body/footer, validated against `@commitlint/config-conventional` rules (lowercase type, 100-char line wraps, `BREAKING CHANGE:` footer handling, etc.).
+- **Customizable prompt** — override the default instructions with your own house style via a single setting.
+- **Secure credentials** — your API key is stored in VS Code's encrypted secret storage, never written to `settings.json`.
+- **Model picker** — fetches the live list of models available to your account/provider and lets you pick one, instead of hardcoding a model name.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- The built-in **Git** extension (`vscode.git`) must be enabled — SmartCommitPilot reads staged changes through it.
+- An API key for one of the supported providers:
+  - [OpenAI](https://platform.openai.com/api-keys)
+  - [Anthropic](https://console.anthropic.com/settings/keys)
+- A git repository open in the workspace with at least one staged change.
+
+## Getting Started
+
+1. Open the Command Palette and run **Smart Commit Pilot: Setup Provider**.
+   - Pick OpenAI or Anthropic, confirm/edit the base URL, and paste your API key.
+   - You'll immediately be asked to pick a model — this list is fetched live from your provider.
+2. Stage the changes you want to commit (`git add` or the Source Control panel).
+3. Click the ✨ **Generate Commit Message** icon in the Source Control panel's title bar.
+4. Review the generated message in the commit input box, edit if needed, and commit as usual.
+
+You can re-run **Setup Provider** or **Select Model** any time to switch providers or models.
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+| Setting | Description |
+|---|---|
+| `smartCommitPilot.provider` | Selected LLM vendor: `OpenAI` or `Anthropic`. |
+| `smartCommitPilot.baseUrl` | Base URL used to reach the selected provider (supports compatible proxies/gateways). |
+| `smartCommitPilot.model` | Model used to generate commit messages, chosen via **Select Model**. |
+| `smartCommitPilot.prompt` | Custom instructions appended to the commit-message prompt. Leave empty to use the built-in Conventional Commits template. |
 
-For example:
+Your API key is **not** stored in this list — it lives in VS Code's secret storage and is set via **Setup Provider**.
 
-This extension contributes the following settings:
+## Commands
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+| Command | What it does |
+|---|---|
+| `Smart Commit Pilot: Setup Provider` | Configure provider, base URL, and API key; then prompts you to select a model. |
+| `Smart Commit Pilot: Select Model` | Re-fetch and choose a model for the currently configured provider. |
+| `Smart Commit Pilot: Setup Prompt` | Opens Settings focused on `smartCommitPilot.prompt` so you can customize the instructions. |
+| `Smart Commit Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the ✨ icon in the Source Control title bar). |
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Requires at least one staged change — SmartCommitPilot won't generate a message from unstaged or working-tree changes.
+- Very large diffs may be truncated or produce lower-quality messages depending on the selected model's context window.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ---
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
 
 **Enjoy!**

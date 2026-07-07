@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="30%" r="85%">
+      <stop offset="0%" stop-color="#1B2C4D"/>
+      <stop offset="100%" stop-color="#0A1220"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- monogram M: the publisher mark, shared across every extension in this namespace -->
+  <rect x="72" y="78" width="24" height="100" rx="8" fill="#F4F1EA"/>
+  <rect x="160" y="78" width="24" height="100" rx="8" fill="#F4F1EA"/>
+  <path d="M 98 82 L 128 146" fill="none" stroke="#F4F1EA" stroke-width="24" stroke-linecap="round"/>
+  <path d="M 128 146 L 158 82" fill="none" stroke="#F4F1EA" stroke-width="24" stroke-linecap="round"/>
+
+  <!-- spark accent: the house AI cue, echoed (not copied) from each product icon -->
+  <circle cx="128" cy="146" r="10" fill="#F5A623"/>
+</svg>

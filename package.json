@@ -4,6 +4,7 @@
   "description": "Automatically generate commit message powered by the state-of-art LLMs.",
   "version": "0.0.1",
   "publisher": "michael-yu",
+  "icon": "images/icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",

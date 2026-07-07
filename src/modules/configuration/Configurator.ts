@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { DEFAULT_BASE_URLS, DEFAULT_COMMIT_PROMPT, Venders } from './configuration.constants';
 import { AdaptorFactory } from '../adaptor/AdaptorFactory';
+import { PromptFileSystemProvider } from './PromptFileSystemProvider';
 
 const API_KEY_SECRET = 'smartCommitPilot.apiKey';
 
@@ -48,7 +49,13 @@ export class Configurator {
 	}
 
 	async setupPrompt(): Promise<void> {
-		await vscode.commands.executeCommand('workbench.action.openSettings', 'smartCommitPilot.prompt');
+		const doc = await vscode.workspace.openTextDocument(PromptFileSystemProvider.uri);
+		await vscode.window.showTextDocument(doc, { preview: false });
+	}
+
+	async savePrompt(prompt: string): Promise<void> {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		await config.update('prompt', prompt.trim(), vscode.ConfigurationTarget.Global);
 	}
 
 	getModel(): string {

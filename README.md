@@ -4,7 +4,7 @@ Generate Conventional-Commits-style commit messages from your staged changes, po
 
 ## Features
 
-- **One-click generation** — click the sparkle (✨) icon in the Source Control panel's title bar and SmartCommitPilot writes a commit message straight into the commit input box.
+- **One-click generation** — click the Smart Commit Pilot icon in the Source Control panel's title bar and it writes a commit message straight into the commit input box.
 - **Bring your own provider** — works with either OpenAI or Anthropic. You supply the API key and base URL, so it also works with OpenAI/Anthropic-compatible proxies and self-hosted gateways.
 - **Conventional Commits by default** — the built-in prompt asks the model for a `type(scope): subject` header plus body/footer, validated against `@commitlint/config-conventional` rules (lowercase type, 100-char line wraps, `BREAKING CHANGE:` footer handling, etc.).
 - **Customizable prompt** — override the default instructions with your own house style via a single setting.
@@ -25,7 +25,7 @@ Generate Conventional-Commits-style commit messages from your staged changes, po
    - Pick OpenAI or Anthropic, confirm/edit the base URL, and paste your API key.
    - You'll immediately be asked to pick a model — this list is fetched live from your provider.
 2. Stage the changes you want to commit (`git add` or the Source Control panel).
-3. Click the ✨ **Generate Commit Message** icon in the Source Control panel's title bar.
+3. Click the **Generate Commit Message** icon in the Source Control panel's title bar.
 4. Review the generated message in the commit input box, edit if needed, and commit as usual.
 
 You can re-run **Setup Provider** or **Select Model** any time to switch providers or models.
@@ -47,8 +47,8 @@ Your API key is **not** stored in this list — it lives in VS Code's secret sto
 |---|---|
 | `Smart Commit Pilot: Setup Provider` | Configure provider, base URL, and API key; then prompts you to select a model. |
 | `Smart Commit Pilot: Select Model` | Re-fetch and choose a model for the currently configured provider. |
-| `Smart Commit Pilot: Setup Prompt` | Opens Settings focused on `smartCommitPilot.prompt` so you can customize the instructions. |
-| `Smart Commit Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the ✨ icon in the Source Control title bar). |
+| `Smart Commit Pilot: Setup Prompt` | Opens the `smartCommitPilot.prompt` instructions in a multi-line editor; save (Cmd/Ctrl+S) to apply. |
+| `Smart Commit Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the icon in the Source Control title bar). |
 
 ## Known Issues
 

@@ -6,6 +6,17 @@ This project follows [Keep a Changelog](http://keepachangelog.com/) conventions.
 
 ## [Unreleased]
 
+## [0.0.3]
+
+### Changed
+
+- Replaced the generic sparkle toolbar icon with a dedicated Smart Commit Pilot mark in the Source Control panel title bar, so it's no longer visually identical to other AI extensions (e.g. GitLens) using the same built-in icon.
+- `Smart Commit Pilot: Setup Prompt` now opens the prompt in a dedicated multi-line text editor instead of the Settings UI.
+
+### Fixed
+
+- Fixed `Smart Commit Pilot: Setup Prompt` hanging Cursor — it no longer relies on `workbench.action.openSettings` with a search query, which is a known Cursor regression.
+
 ## [0.0.1]
 
 ### Added

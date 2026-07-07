@@ -2,7 +2,7 @@
   "name": "smart-commit-pilot",
   "displayName": "SmartCommitPilot",
   "description": "Automatically generate commit message powered by the state-of-art LLMs.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -43,7 +43,10 @@
         "command": "smart-commit-pilot.generateCommitMessage",
         "title": "Generate Commit Message",
         "category": "Smart Commit Pilot",
-        "icon": "$(sparkle)"
+        "icon": {
+          "light": "images/scm-icon-light.svg",
+          "dark": "images/scm-icon-dark.svg"
+        }
       },
       {
         "command": "smart-commit-pilot.configurePrompt",

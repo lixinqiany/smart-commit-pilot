@@ -2,7 +2,7 @@
   "name": "smart-commit-pilot",
   "displayName": "SmartCommitPilot",
   "description": "Automatically generate commit message powered by the state-of-art LLMs.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -22,7 +22,7 @@
     "conventional commits"
   ],
   "engines": {
-    "vscode": "^1.125.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
@@ -112,7 +112,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "^1.85.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.0.0",
     "esbuild": "^0.28.1",

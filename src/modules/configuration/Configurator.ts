@@ -12,6 +12,10 @@ export class Configurator {
 		this.output = vscode.window.createOutputChannel('Smart Commit Pilot');
 	}
 
+	log(message: string): void {
+		this.output.appendLine(message);
+	}
+
 	async setupVendor(): Promise<void> {
 		const venderInfo = await this.captureVenderInfo();
 		if (!venderInfo) {

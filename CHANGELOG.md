@@ -16,6 +16,7 @@ This project follows [Keep a Changelog](http://keepachangelog.com/) conventions.
 ### Fixed
 
 - Fixed `Smart Commit Pilot: Setup Prompt` hanging Cursor — it no longer relies on `workbench.action.openSettings` with a search query, which is a known Cursor regression.
+- Fixed commit-generation diagnostic logs going to the Extension Host developer console instead of the "Smart Commit Pilot" Output channel, where they were invisible to users checking the Output panel.
 
 ## [0.0.1]
 

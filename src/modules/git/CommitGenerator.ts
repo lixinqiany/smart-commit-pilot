@@ -17,37 +17,37 @@ export class CommitGenerator {
     ) {}
 
     async run(rootUri?: vscode.Uri): Promise<void> {
-        console.log(`[SmartCommitPilot] generate triggered for rootUri=${rootUri?.toString() ?? '(default repo)'}`);
+        this.configurator.log(`generate triggered for rootUri=${rootUri?.toString() ?? '(default repo)'}`);
 
         const repository = this.gitService.getRepository(rootUri);
-        console.log(`[SmartCommitPilot] resolved repository rootUri=${repository.rootUri.toString()}`);
+        this.configurator.log(`resolved repository rootUri=${repository.rootUri.toString()}`);
 
         if (!this.gitService.hasStagedChanges(repository)) {
-            console.log('[SmartCommitPilot] no staged changes, aborting');
+            this.configurator.log('no staged changes, aborting');
             vscode.window.showWarningMessage('Smart Commit Pilot: no staged changes to generate a commit message from.');
             return;
         }
 
         const venderInfo = await this.configurator.getBaseURLandSecrets();
         if (!venderInfo) {
-            console.log('[SmartCommitPilot] no vendor configured, aborting');
+            this.configurator.log('no vendor configured, aborting');
             vscode.window.showErrorMessage('Smart Commit Pilot: please setup the provider first.');
             return;
         }
         const model = this.configurator.getModel();
         if (!model) {
-            console.log('[SmartCommitPilot] no model selected, aborting');
+            this.configurator.log('no model selected, aborting');
             vscode.window.showErrorMessage('Smart Commit Pilot: please select a model first.');
             return;
         }
-        console.log(`[SmartCommitPilot] using provider=${venderInfo.provider} model=${model}`);
+        this.configurator.log(`using provider=${venderInfo.provider} model=${model}`);
 
         try {
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Generating commit message...' },
                 async () => {
                     const diff = await this.gitService.getStagedDiff(repository);
-                    console.log(`[SmartCommitPilot] staged diff fetched (${diff.length} chars)`);
+                    this.configurator.log(`staged diff fetched (${diff.length} chars)`);
 
                     const adaptor = AdaptorFactory.create(venderInfo.provider as Venders, venderInfo.baseUrl, venderInfo.apiKey);
                     const response = await adaptor.createMessage({
@@ -56,10 +56,10 @@ export class CommitGenerator {
                         max_output_tokens: MAX_OUTPUT_TOKENS,
                         messages: [{ role: MessageRole.USER, content: diff }],
                     });
-                    console.log(`[SmartCommitPilot] received response with ${response.content.length} content part(s)`);
+                    this.configurator.log(`received response with ${response.content.length} content part(s)`);
                     if (response.usage) {
-                        console.log(
-                            `[SmartCommitPilot] token usage: input=${response.usage.input_tokens} output=${response.usage.output_tokens}`
+                        this.configurator.log(
+                            `token usage: input=${response.usage.input_tokens} output=${response.usage.output_tokens}`
                         );
                     }
 
@@ -67,13 +67,14 @@ export class CommitGenerator {
                         .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
                         .map((part) => part.text)
                         .join('\n');
-                    console.log(`[SmartCommitPilot] writing commit message (${message.length} chars) to input box`);
+                    this.configurator.log(`writing commit message (${message.length} chars) to input box`);
                     this.gitService.setCommitMessage(message, repository);
                 }
             );
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            console.error('[SmartCommitPilot] generate failed', error);
+            const stack = error instanceof Error && error.stack ? `\n${error.stack}` : '';
+            this.configurator.log(`generate failed: ${message}${stack}`);
             vscode.window.showErrorMessage(`Smart Commit Pilot: failed to generate commit message. ${message}`);
         }
     }

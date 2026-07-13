@@ -1,10 +1,10 @@
-# SmartCommitPilot
+# Smart Git Pilot
 
-Generate Conventional-Commits-style commit messages from your staged changes, powered by OpenAI or Anthropic — right from the Source Control panel.
+Generate AI-powered commit messages and inspect current-line Git history directly in VS Code.
 
 ## Features
 
-- **One-click generation** — click the Smart Commit Pilot icon in the Source Control panel's title bar and it writes a commit message straight into the commit input box.
+- **One-click generation** — click the Smart Git Pilot icon in the Source Control panel's title bar and it writes a commit message straight into the commit input box.
 - **Bring your own provider** — works with either OpenAI or Anthropic. You supply the API key and base URL, so it also works with OpenAI/Anthropic-compatible proxies and self-hosted gateways.
 - **Conventional Commits by default** — the built-in prompt asks the model for a `type(scope): subject` header plus body/footer, validated against `@commitlint/config-conventional` rules (lowercase type, 100-char line wraps, `BREAKING CHANGE:` footer handling, etc.).
 - **Customizable prompt** — override the default instructions with your own house style via a single setting.
@@ -14,7 +14,7 @@ Generate Conventional-Commits-style commit messages from your staged changes, po
 
 ## Requirements
 
-- The built-in **Git** extension (`vscode.git`) must be enabled — SmartCommitPilot reads staged changes through it.
+- The built-in **Git** extension (`vscode.git`) must be enabled — Smart Git Pilot reads staged changes and repository history through it.
 - An API key for one of the supported providers:
   - [OpenAI](https://platform.openai.com/api-keys)
   - [Anthropic](https://console.anthropic.com/settings/keys)
@@ -22,7 +22,7 @@ Generate Conventional-Commits-style commit messages from your staged changes, po
 
 ## Getting Started
 
-1. Open the Command Palette and run **Smart Commit Pilot: Setup Provider**.
+1. Open the Command Palette and run **Smart Git Pilot: Setup Provider**.
    - Pick OpenAI or Anthropic, confirm/edit the base URL, and paste your API key.
    - You'll immediately be asked to pick a model — this list is fetched live from your provider.
 2. Stage the changes you want to commit (`git add` or the Source Control panel).
@@ -44,19 +44,21 @@ You can re-run **Setup Provider** or **Select Model** any time to switch provide
 
 Your API key is **not** stored in this list — it lives in VS Code's secret storage and is set via **Setup Provider**.
 
+When blame avatars are enabled, Smart Git Pilot derives a Gravatar URL from the commit author's email address and VS Code may request that remote image. Disable `smartCommitPilot.blame.avatars` to use a local editor icon instead.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `Smart Commit Pilot: Setup Provider` | Configure provider, base URL, and API key; then prompts you to select a model. |
-| `Smart Commit Pilot: Select Model` | Re-fetch and choose a model for the currently configured provider. |
-| `Smart Commit Pilot: Setup Prompt` | Opens the `smartCommitPilot.prompt` instructions in a multi-line editor; save (Cmd/Ctrl+S) to apply. |
-| `Smart Commit Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the icon in the Source Control title bar). |
-| `Smart Commit Pilot: Toggle Current Line Blame` | Enables or disables the current-line commit hint for the workspace. |
+| `Smart Git Pilot: Setup Provider` | Configure provider, base URL, and API key; then prompts you to select a model. |
+| `Smart Git Pilot: Select Model` | Re-fetch and choose a model for the currently configured provider. |
+| `Smart Git Pilot: Setup Prompt` | Opens the `smartCommitPilot.prompt` instructions in a multi-line editor; save (Cmd/Ctrl+S) to apply. |
+| `Smart Git Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the icon in the Source Control title bar). |
+| `Smart Git Pilot: Toggle Current Line Blame` | Enables or disables the current-line commit hint for the workspace. |
 
 ## Known Issues
 
-- Requires at least one staged change — SmartCommitPilot won't generate a message from unstaged or working-tree changes.
+- Requires at least one staged change — Smart Git Pilot won't generate a message from unstaged or working-tree changes.
 - Very large diffs may be truncated or produce lower-quality messages depending on the selected model's context window.
 - Current line blame requires the Git executable configured for VS Code, or `git` available on your PATH.
 

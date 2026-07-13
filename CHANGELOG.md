@@ -6,6 +6,20 @@ This project follows [Keep a Changelog](http://keepachangelog.com/) conventions.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-13
+
+### Added
+
+- Added current-line Git blame hints with author, relative time, and commit summary in the editor.
+- Added rich commit hovers with author avatars, exact commit time, commit message, and copyable commit hash.
+- Added working-tree-aware blame so new and modified lines are shown as uncommitted while unchanged lines retain their commit history, including before the document is saved.
+- Added `Smart Git Pilot: Toggle Current Line Blame` and the `smartCommitPilot.blame.enabled` setting.
+- Added the `smartCommitPilot.blame.avatars` setting to disable remote Gravatar and generated cartoon avatars.
+
+### Changed
+
+- Renamed the user-facing extension brand from SmartCommitPilot to Smart Git Pilot to reflect its broader Git workflow capabilities. The extension ID, command IDs, and setting keys remain unchanged.
+
 ## [0.0.3]
 
 ### Changed

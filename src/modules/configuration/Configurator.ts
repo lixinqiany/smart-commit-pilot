@@ -9,7 +9,7 @@ export class Configurator {
 	private readonly output: vscode.OutputChannel;
 
 	constructor(private readonly context: vscode.ExtensionContext) {
-		this.output = vscode.window.createOutputChannel('Smart Commit Pilot');
+		this.output = vscode.window.createOutputChannel('Smart Git Pilot');
 	}
 
 	log(message: string): void {
@@ -85,7 +85,7 @@ export class Configurator {
 	async setupModel(): Promise<void> {
 		const venderInfo = await this.getBaseURLandSecrets();
 		if (!venderInfo) {
-			vscode.window.showErrorMessage('Smart Commit Pilot: please setup the provider first.');
+			vscode.window.showErrorMessage('Smart Git Pilot: please setup the provider first.');
 			return;
 		}
 		const { provider, baseUrl, apiKey } = venderInfo;
@@ -101,12 +101,12 @@ export class Configurator {
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			vscode.window.showErrorMessage(`Smart Commit Pilot: failed to fetch models. ${message}`);
+			vscode.window.showErrorMessage(`Smart Git Pilot: failed to fetch models. ${message}`);
 			return;
 		}
 
 		if (models.length === 0) {
-			vscode.window.showWarningMessage('Smart Commit Pilot: no models available for the configured provider.');
+			vscode.window.showWarningMessage('Smart Git Pilot: no models available for the configured provider.');
 			return;
 		}
 

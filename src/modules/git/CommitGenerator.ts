@@ -24,20 +24,20 @@ export class CommitGenerator {
 
         if (!this.gitService.hasStagedChanges(repository)) {
             this.configurator.log('no staged changes, aborting');
-            vscode.window.showWarningMessage('Smart Commit Pilot: no staged changes to generate a commit message from.');
+            vscode.window.showWarningMessage('Smart Git Pilot: no staged changes to generate a commit message from.');
             return;
         }
 
         const venderInfo = await this.configurator.getBaseURLandSecrets();
         if (!venderInfo) {
             this.configurator.log('no vendor configured, aborting');
-            vscode.window.showErrorMessage('Smart Commit Pilot: please setup the provider first.');
+            vscode.window.showErrorMessage('Smart Git Pilot: please setup the provider first.');
             return;
         }
         const model = this.configurator.getModel();
         if (!model) {
             this.configurator.log('no model selected, aborting');
-            vscode.window.showErrorMessage('Smart Commit Pilot: please select a model first.');
+            vscode.window.showErrorMessage('Smart Git Pilot: please select a model first.');
             return;
         }
         this.configurator.log(`using provider=${venderInfo.provider} model=${model}`);
@@ -75,7 +75,7 @@ export class CommitGenerator {
             const message = error instanceof Error ? error.message : String(error);
             const stack = error instanceof Error && error.stack ? `\n${error.stack}` : '';
             this.configurator.log(`generate failed: ${message}${stack}`);
-            vscode.window.showErrorMessage(`Smart Commit Pilot: failed to generate commit message. ${message}`);
+            vscode.window.showErrorMessage(`Smart Git Pilot: failed to generate commit message. ${message}`);
         }
     }
 }

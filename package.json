@@ -1,8 +1,8 @@
 {
   "name": "smart-commit-pilot",
-  "displayName": "SmartCommitPilot",
-  "description": "Automatically generate commit message powered by the state-of-art LLMs.",
-  "version": "0.0.3",
+  "displayName": "Smart Git Pilot",
+  "description": "Generate AI-powered commit messages and inspect current-line Git history directly in VS Code.",
+  "version": "0.1.0",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -17,8 +17,7 @@
     "git",
     "commit",
     "AI",
-    "OpenAI",
-    "Anthropic",
+    "blame",
     "conventional commits"
   ],
   "engines": {
@@ -39,12 +38,12 @@
       {
         "command": "smart-commit-pilot.setup",
         "title": "Setup Provider",
-        "category": "Smart Commit Pilot"
+        "category": "Smart Git Pilot"
       },
       {
         "command": "smart-commit-pilot.generateCommitMessage",
         "title": "Generate Commit Message",
-        "category": "Smart Commit Pilot",
+        "category": "Smart Git Pilot",
         "icon": {
           "light": "images/scm-icon-light.svg",
           "dark": "images/scm-icon-dark.svg"
@@ -53,17 +52,17 @@
       {
         "command": "smart-commit-pilot.configurePrompt",
         "title": "Setup Prompt",
-        "category": "Smart Commit Pilot"
+        "category": "Smart Git Pilot"
       },
       {
         "command": "smart-commit-pilot.selectModel",
         "title": "Select Model",
-        "category": "Smart Commit Pilot"
+        "category": "Smart Git Pilot"
       },
       {
         "command": "smart-commit-pilot.toggleLineBlame",
         "title": "Toggle Current Line Blame",
-        "category": "Smart Commit Pilot"
+        "category": "Smart Git Pilot"
       }
     ],
     "menus": {
@@ -76,7 +75,7 @@
       ]
     },
     "configuration": {
-      "title": "Smart Commit Pilot",
+      "title": "Smart Git Pilot",
       "properties": {
         "smartCommitPilot.provider": {
           "type": "string",
@@ -127,7 +126,9 @@
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "vsix": "vsce package --no-dependencies",
+    "publish:extension": "vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

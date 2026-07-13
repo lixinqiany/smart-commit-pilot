@@ -67,6 +67,21 @@ export class Configurator {
 		return config.get<string>('model', '');
 	}
 
+	isLineBlameEnabled(): boolean {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		return config.get<boolean>('blame.enabled', true);
+	}
+
+	isLineBlameAvatarEnabled(): boolean {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		return config.get<boolean>('blame.avatars', true);
+	}
+
+	async toggleLineBlame(): Promise<void> {
+		const config = vscode.workspace.getConfiguration('smartCommitPilot');
+		await config.update('blame.enabled', !this.isLineBlameEnabled(), vscode.ConfigurationTarget.Workspace);
+	}
+
 	async setupModel(): Promise<void> {
 		const venderInfo = await this.getBaseURLandSecrets();
 		if (!venderInfo) {

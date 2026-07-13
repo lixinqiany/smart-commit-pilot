@@ -10,6 +10,7 @@ Generate Conventional-Commits-style commit messages from your staged changes, po
 - **Customizable prompt** — override the default instructions with your own house style via a single setting.
 - **Secure credentials** — your API key is stored in VS Code's encrypted secret storage, never written to `settings.json`.
 - **Model picker** — fetches the live list of models available to your account/provider and lets you pick one, instead of hardcoding a model name.
+- **Current line blame** — shows the author, relative time, and commit summary for the active line, with full details and a copyable hash on hover. Local edits are marked as uncommitted without losing history for unchanged lines.
 
 ## Requirements
 
@@ -38,6 +39,8 @@ You can re-run **Setup Provider** or **Select Model** any time to switch provide
 | `smartCommitPilot.baseUrl` | Base URL used to reach the selected provider (supports compatible proxies/gateways). |
 | `smartCommitPilot.model` | Model used to generate commit messages, chosen via **Select Model**. |
 | `smartCommitPilot.prompt` | Custom instructions appended to the commit-message prompt. Leave empty to use the built-in Conventional Commits template. |
+| `smartCommitPilot.blame.enabled` | Shows commit information for the current editor line. Enabled by default. |
+| `smartCommitPilot.blame.avatars` | Shows Gravatar or generated cartoon avatars in blame hovers. Enabled by default. |
 
 Your API key is **not** stored in this list — it lives in VS Code's secret storage and is set via **Setup Provider**.
 
@@ -49,11 +52,13 @@ Your API key is **not** stored in this list — it lives in VS Code's secret sto
 | `Smart Commit Pilot: Select Model` | Re-fetch and choose a model for the currently configured provider. |
 | `Smart Commit Pilot: Setup Prompt` | Opens the `smartCommitPilot.prompt` instructions in a multi-line editor; save (Cmd/Ctrl+S) to apply. |
 | `Smart Commit Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the icon in the Source Control title bar). |
+| `Smart Commit Pilot: Toggle Current Line Blame` | Enables or disables the current-line commit hint for the workspace. |
 
 ## Known Issues
 
 - Requires at least one staged change — SmartCommitPilot won't generate a message from unstaged or working-tree changes.
 - Very large diffs may be truncated or produce lower-quality messages depending on the selected model's context window.
+- Current line blame requires the Git executable configured for VS Code, or `git` available on your PATH.
 
 ## Release Notes
 

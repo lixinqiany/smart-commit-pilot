@@ -48,6 +48,7 @@ export interface Repository {
     readonly state: RepositoryState;
 
     diff(cached?: boolean): Promise<string>;
+    getConfig(key: string): Promise<string>;
 }
 
 export interface API {

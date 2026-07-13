@@ -27,7 +27,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "extensionDependencies": [
     "vscode.git"
@@ -56,6 +58,11 @@
       {
         "command": "smart-commit-pilot.selectModel",
         "title": "Select Model",
+        "category": "Smart Commit Pilot"
+      },
+      {
+        "command": "smart-commit-pilot.toggleLineBlame",
+        "title": "Toggle Current Line Blame",
         "category": "Smart Commit Pilot"
       }
     ],
@@ -94,6 +101,16 @@
           "type": "string",
           "default": "",
           "description": "Selected model of the configured provider"
+        },
+        "smartCommitPilot.blame.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show commit information for the current line in the editor."
+        },
+        "smartCommitPilot.blame.avatars": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Gravatar or generated cartoon avatars in current-line blame hovers."
         }
       }
     }

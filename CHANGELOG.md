@@ -7,6 +7,12 @@ Group related changes under Unreleased during development and assign one version
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-26
+
+### Added
+
+- Save, apply, pop, or drop stashes from the repository toolbar beside the commit message box.
+
 ## [0.3.0] - 2026-11-26
 
 ### Added

@@ -7,6 +7,7 @@ The interface follows the VS Code display language. Simplified and Traditional C
 ## Features
 
 - **One-click generation** — click the Smart Git Pilot icon in the Source Control panel's title bar and it writes a commit message straight into the commit input box.
+- **Stash changes** — open the down-arrow tray beside **Split Changes into Commits** in the Source Control toolbar. Save tracked changes, include untracked files, or stash only staged changes (Git 2.35+). To restore a stash, choose **Apply** to keep the entry or **Pop** to remove it after a successful restore. **Drop** asks for confirmation before deleting the selected entry.
 - **Bring your own provider** — works with either OpenAI or Anthropic. You supply the API key and base URL, so it also works with OpenAI/Anthropic-compatible proxies and self-hosted gateways.
 - **Conventional Commits by default** — the built-in prompt asks the model for a `type(scope): subject` header plus body/footer, validated against `@commitlint/config-conventional` rules (lowercase type, 100-char line wraps, `BREAKING CHANGE:` footer handling, etc.).
 - **Customizable prompt** — override the default instructions with your own house style via a single setting.

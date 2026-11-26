@@ -2,7 +2,7 @@
   "name": "smart-commit-pilot",
   "displayName": "Smart Git Pilot",
   "description": "%extension.description%",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -217,6 +217,16 @@
         "icon": "$(target)"
       }
     ],
+    "submenus": [
+      {
+        "id": "smart-commit-pilot.stash",
+        "label": "%menus.stash%",
+        "icon": {
+          "light": "images/stash-light.svg",
+          "dark": "images/stash-dark.svg"
+        }
+      }
+    ],
     "menus": {
       "scm/title": [
         {
@@ -228,6 +238,38 @@
           "command": "smart-commit-pilot.composeCommits",
           "when": "scmProvider == git",
           "group": "navigation@11"
+        },
+        {
+          "submenu": "smart-commit-pilot.stash",
+          "when": "scmProvider == git",
+          "group": "navigation@12"
+        }
+      ],
+      "smart-commit-pilot.stash": [
+        {
+          "command": "git.stash",
+          "group": "1_save@1"
+        },
+        {
+          "command": "git.stashIncludeUntracked",
+          "group": "1_save@2"
+        },
+        {
+          "command": "git.stashStaged",
+          "when": "gitVersion2.35",
+          "group": "1_save@3"
+        },
+        {
+          "command": "git.stashApply",
+          "group": "2_restore@1"
+        },
+        {
+          "command": "git.stashPop",
+          "group": "2_restore@2"
+        },
+        {
+          "command": "git.stashDrop",
+          "group": "3_remove@1"
         }
       ],
       "view/title": [

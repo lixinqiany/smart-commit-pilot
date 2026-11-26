@@ -1,6 +1,7 @@
 {
   "extension.description": "在 VS Code 中管理 Git 分支、查看当前行的提交历史，并通过 AI 生成提交信息。",
   "commands.setup": "配置服务提供商",
+  "menus.stash": "储藏更改 (Stash)",
   "commands.generateCommitMessage": "生成提交信息",
   "commands.configurePrompt": "配置提示词",
   "commands.selectModel": "选择提交信息模型",

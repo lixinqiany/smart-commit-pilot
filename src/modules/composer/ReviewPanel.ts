@@ -28,7 +28,7 @@ export class ReviewPanel {
         private readonly composition: Composition,
         private readonly commit: (plan: Plan) => Promise<void>, onClose: () => void) {
         const resources = vscode.Uri.joinPath(extensionUri, 'media', 'composer');
-        this.panel = vscode.window.createWebviewPanel('smartGitPilot.commitReview', t('Split changes into commits'),
+        this.panel = vscode.window.createWebviewPanel('smartGitPilot.commitReview', 'Composer',
             vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [resources] });
         const modelSetting = vscode.workspace.onDidChangeConfiguration(event => {
             if (event.affectsConfiguration('smartCommitPilot.composer.model')) {
@@ -69,7 +69,6 @@ export class ReviewPanel {
             this.showGeneration();
             return;
         }
-        this.panel.title = t('Review split commits');
         void this.panel.webview.postMessage({ type: 'plan', ...this.panelContext(), revision: ++this.revision, active, warning: this.plan.warning,
             scope: this.scopeTitle(this.plan.snapshot.scope), elapsedMs: this.generationDuration,
             drafts: this.plan.drafts.map(({ message, files, edits, locked, check }) =>

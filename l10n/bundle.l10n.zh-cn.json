@@ -142,7 +142,6 @@
   "Created {0} commits in {1}.": "已在 {1} 中创建 {0} 个提交。",
   "Only the changes selected with + or git add": "只包含点「+」或运行 git add 时选中的改动",
   "New, edited and deleted files, even if unstaged. Skips ignored new files.": "新增、修改、删除都算，无需暂存（Git 忽略的新文件除外）",
-  "Split changes into commits": "拆分改动为多个提交",
   "Choose which changes to send to your AI provider": "选择要发送给 AI 服务商的改动",
   "Preparing split commits…": "正在准备拆分方案…",
   "No changes in the selected scope.": "所选范围内没有改动。",

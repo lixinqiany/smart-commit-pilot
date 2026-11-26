@@ -120,7 +120,7 @@ export function parseLineBlame(output: string, identity: GitIdentity = {}): Blam
     }
 
     const hash = header[1];
-    const author = values.get('author') ?? 'Unknown';
+    const author = values.get('author') ?? '';
     const parsedAuthorEmail = values.get('author-mail')?.replace(/^<|>$/g, '');
     const authorTime = Number(values.get('author-time'));
     const isUncommitted = hash === ZERO_HASH;
@@ -130,7 +130,7 @@ export function parseLineBlame(output: string, identity: GitIdentity = {}): Blam
 
     return {
         hash,
-        author,
+        author: author || vscode.l10n.t('Unknown author'),
         authorEmail: isUncommitted ? identity.email : parsedAuthorEmail,
         authoredAt: Number.isFinite(authorTime) ? new Date(authorTime * 1000) : new Date(0),
         summary: values.get('summary') ?? '',
@@ -146,7 +146,7 @@ export class GitService {
     constructor() {
         const extension = vscode.extensions.getExtension<GitExtension>('vscode.git');
         if (!extension) {
-            throw new Error('vscode.git extension is not available.');
+            throw new Error(vscode.l10n.t('The built-in Git extension is unavailable.'));
         }
         this.api = extension.exports.getAPI(1);
     }
@@ -154,7 +154,7 @@ export class GitService {
     getRepository(rootUri?: vscode.Uri): Repository {
         const repositories = this.api.repositories;
         if (repositories.length === 0) {
-            throw new Error('No git repository found in the current workspace.');
+            throw new Error(vscode.l10n.t('No Git repository was found in this workspace.'));
         }
         if (!rootUri) {
             return repositories[0];
@@ -162,7 +162,7 @@ export class GitService {
 
         const repository = repositories.find((repo) => repo.rootUri.toString() === rootUri.toString());
         if (!repository) {
-            throw new Error(`No git repository found for ${rootUri.toString()}.`);
+            throw new Error(vscode.l10n.t('No Git repository was found for {0}.', rootUri.toString()));
         }
         return repository;
     }
@@ -544,7 +544,7 @@ export class GitService {
                     outputSize += chunk.length;
                     if (outputSize > maxOutputBytes) {
                         child.kill();
-                        finish(() => reject(new Error('Git output exceeded the maximum buffer size.')));
+                        finish(() => reject(new Error(vscode.l10n.t('Git output exceeded the maximum buffer size.'))));
                         return;
                     }
                     stdout.push(chunk);
@@ -557,7 +557,7 @@ export class GitService {
                     resolve(Buffer.concat(stdout).toString('utf8'));
                     return;
                 }
-                reject(new Error(Buffer.concat(stderr).toString('utf8').trim() || `Git exited with code ${code}.`));
+                reject(new Error(Buffer.concat(stderr).toString('utf8').trim() || vscode.l10n.t('Git exited with code {0}.', String(code))));
             }));
             if (child.stdin) {
                 child.stdin.on('error', (error) => finish(() => reject(error)));

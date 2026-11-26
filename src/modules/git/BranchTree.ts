@@ -5,7 +5,7 @@ import { authorAvatar } from './authorAvatar';
 import { commitHover } from './commitHover';
 import { CommitFileNode, CommitFolderNode, commitFileRows, commitFileUri } from './CommitFiles';
 import { Repository } from './typings/git';
-import { formatRelativeTime } from './formatRelativeTime';
+import { displayLocale, formatRelativeTime } from './formatRelativeTime';
 
 export const BRANCH_VIEW = 'smart-commit-pilot.branches';
 export const EMPTY_FILE_SCHEME = 'smart-git-pilot-empty';
@@ -221,7 +221,7 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
             item.id = JSON.stringify([root, 'tag', tag.name]);
             item.iconPath = new vscode.ThemeIcon('tag');
             item.description = [tag.hash.slice(0, 7), tag.date && formatRelativeTime(tag.date), tag.subject].filter(Boolean).join('  •  ');
-            item.tooltip = [tag.name, tag.subject, tag.hash, tag.date?.toLocaleString(vscode.env.language)].filter(Boolean).join('\n');
+            item.tooltip = [tag.name, tag.subject, tag.hash, tag.date?.toLocaleString(displayLocale)].filter(Boolean).join('\n');
             return item;
         }
         if (node.kind === 'contributor') {

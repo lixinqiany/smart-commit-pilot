@@ -1,7 +1,7 @@
 {
   "name": "smart-commit-pilot",
   "displayName": "Smart Git Pilot",
-  "description": "Manage Git branches, inspect current-line history, and generate AI-powered commit messages in VS Code.",
+  "description": "%extension.description%",
   "version": "0.2.2",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
@@ -37,12 +37,12 @@
     "commands": [
       {
         "command": "smart-commit-pilot.setup",
-        "title": "Setup Provider",
+        "title": "%commands.setup%",
         "category": "Smart Git Pilot"
       },
       {
         "command": "smart-commit-pilot.generateCommitMessage",
-        "title": "Generate Commit Message",
+        "title": "%commands.generateCommitMessage%",
         "category": "Smart Git Pilot",
         "icon": {
           "light": "images/scm-icon-light.svg",
@@ -51,17 +51,17 @@
       },
       {
         "command": "smart-commit-pilot.configurePrompt",
-        "title": "Setup Prompt",
+        "title": "%commands.configurePrompt%",
         "category": "Smart Git Pilot"
       },
       {
         "command": "smart-commit-pilot.selectModel",
-        "title": "Select Model",
+        "title": "%commands.selectModel%",
         "category": "Smart Git Pilot"
       },
       {
         "command": "smart-commit-pilot.toggleLineBlame",
-        "title": "Toggle Current Line Blame",
+        "title": "%commands.toggleLineBlame%",
         "category": "Smart Git Pilot"
       },
       {
@@ -404,32 +404,32 @@
             "Anthropic"
           ],
           "default": "OpenAI",
-          "description": "SupportedReal Word Large Language Model Vender."
+          "description": "%settings.provider%"
         },
         "smartCommitPilot.baseUrl": {
           "type": "string",
           "default": "",
-          "description": "The Base URL of the selected provider."
+          "description": "%settings.baseUrl%"
         },
         "smartCommitPilot.prompt": {
           "type": "string",
           "default": "",
-          "description": "Prompt Template for generating commit messages."
+          "description": "%settings.prompt%"
         },
         "smartCommitPilot.model": {
           "type": "string",
           "default": "",
-          "description": "Selected model of the configured provider"
+          "description": "%settings.model%"
         },
         "smartCommitPilot.blame.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show commit information for the current line in the editor."
+          "description": "%settings.blame.enabled%"
         },
         "smartCommitPilot.blame.avatars": {
           "type": "boolean",
           "default": true,
-          "description": "Show author avatars from GitHub or Gravatar in branch history and blame hovers. Missing Gravatars use RoboHash artwork."
+          "description": "%settings.blame.avatars%"
         }
       }
     },

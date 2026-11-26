@@ -2,6 +2,8 @@
 
 Manage Git branches, inspect current-line history, and generate AI-powered commit messages in VS Code.
 
+The interface follows the VS Code display language. Simplified and Traditional Chinese are supported, with English for other languages. Your prompt controls the language of generated commit messages.
+
 ## Features
 
 - **One-click generation** — click the Smart Git Pilot icon in the Source Control panel's title bar and it writes a commit message straight into the commit input box.

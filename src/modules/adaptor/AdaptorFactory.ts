@@ -1,3 +1,4 @@
+import { l10n } from 'vscode';
 import { BaseAdaptor } from './BaseAdaptor';
 import { Venders } from '../configuration/configuration.constants';
 
@@ -13,7 +14,7 @@ export class AdaptorFactory {
     static create(provider: Venders, baseURL: string, apiKey: string): BaseAdaptor {
         const AdaptorClass = AdaptorFactory.#registry.get(provider);
         if (!AdaptorClass) {
-            throw new Error(`${provider} is not registered by Dispatcher.`);
+            throw new Error(l10n.t('Unsupported provider: {0}.', provider));
         }
         return new AdaptorClass(baseURL, apiKey, provider);
     }

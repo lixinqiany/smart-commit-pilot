@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 
+// Match the extension's available UI languages when formatting dates and relative time.
+export const displayLocale = /^(en|zh)(-|$)/i.test(vscode.env.language) ? vscode.env.language : 'en';
+
 export function formatRelativeTime(date: Date): string {
     const elapsedSeconds = Math.round((date.getTime() - Date.now()) / 1000);
     const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
@@ -11,7 +14,7 @@ export function formatRelativeTime(date: Date): string {
         ['minute', 60],
     ];
 
-    const formatter = new Intl.RelativeTimeFormat(vscode.env.language, { numeric: 'auto' });
+    const formatter = new Intl.RelativeTimeFormat(displayLocale, { numeric: 'auto' });
     for (const [unit, seconds] of units) {
         if (Math.abs(elapsedSeconds) >= seconds) {
             return formatter.format(Math.round(elapsedSeconds / seconds), unit);

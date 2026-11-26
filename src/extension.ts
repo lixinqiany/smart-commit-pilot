@@ -18,7 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "smart-commit-pilot" is now active!');
+	console.log(vscode.l10n.t('Smart Git Pilot is active.'));
 
 	AdaptorFactory.register(Venders.OpenAI, OpenAIAdaptor);
     AdaptorFactory.register(Venders.Anthropic, AnthropicAdaptor);

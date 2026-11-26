@@ -7,6 +7,7 @@ Group related changes under Unreleased during development and assign one version
 
 ## [Unreleased]
 
+- Localize commands, settings, AI setup, and line blame for Simplified and Traditional Chinese. Other display languages use English.
 - Delete a local branch from its context menu. The confirmation shows the upstream or fetched same-name remote branches and offers a force toggle.
 
 ## [0.2.2] - 2026-11-26

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { authorAvatar } from './authorAvatar';
 import { COPY_BLAME_HASH_COMMAND } from './BlameRunner';
-import { formatRelativeTime } from './formatRelativeTime';
+import { displayLocale, formatRelativeTime } from './formatRelativeTime';
 import type { CommitHoverDetails, HistoryCommit } from './GitService';
 
 const t = vscode.l10n.t;
@@ -20,7 +20,7 @@ function link(command: string, args: unknown[]): string {
 }
 
 function timeLabel(date: Date): string {
-    const absolute = new Intl.DateTimeFormat(vscode.env.language, { dateStyle: 'long', timeStyle: 'short' }).format(date);
+    const absolute = new Intl.DateTimeFormat(displayLocale, { dateStyle: 'long', timeStyle: 'short' }).format(date);
     return formatRelativeTime(date) + ' (' + absolute + ')';
 }
 

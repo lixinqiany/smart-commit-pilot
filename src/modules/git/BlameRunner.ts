@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import { authorAvatar } from './authorAvatar';
 import { Configurator } from '../configuration/Configurator';
-import { formatRelativeTime } from './formatRelativeTime';
+import { displayLocale, formatRelativeTime } from './formatRelativeTime';
 import { BlameInfo, GitService } from './GitService';
 
 export const COPY_BLAME_HASH_COMMAND = 'smart-commit-pilot.copyBlameHash';
 
 const BLAME_DELAY_MS = 300;
+const t = vscode.l10n.t;
 const MAX_INLINE_SUMMARY_LENGTH = 80;
 
 interface CachedBlame {
@@ -150,10 +151,10 @@ export class BlameRunner implements vscode.Disposable {
 
     #formatInline(blame: BlameInfo): string {
         if (blame.isUncommitted) {
-            return 'You • Uncommitted changes';
+            return t('You • Uncommitted changes');
         }
 
-        const author = blame.isCurrentUser ? 'You' : blame.author;
+        const author = blame.isCurrentUser ? t('You') : blame.author;
         const summary = blame.summary.length > MAX_INLINE_SUMMARY_LENGTH
             ? `${blame.summary.slice(0, MAX_INLINE_SUMMARY_LENGTH - 1)}…`
             : blame.summary;
@@ -166,17 +167,17 @@ export class BlameRunner implements vscode.Disposable {
         markdown.isTrusted = { enabledCommands: [COPY_BLAME_HASH_COMMAND] };
 
         if (blame.isUncommitted) {
-            const avatar = formatAvatar(blame.authorEmail, 'You', this.configurator.isLineBlameAvatarEnabled());
-            const author = formatAuthorLink('You', blame.authorEmail);
-            markdown.appendMarkdown(`${avatar} ${author} &nbsp; $(history) Uncommitted changes\n\n`);
-            markdown.appendMarkdown('This line has local changes that are not committed yet.');
+            const avatar = formatAvatar(blame.authorEmail, t('You'), this.configurator.isLineBlameAvatarEnabled());
+            const author = formatAuthorLink(t('You'), blame.authorEmail);
+            markdown.appendMarkdown(`${avatar} ${author} &nbsp; $(history) ${t('Uncommitted changes')}\n\n`);
+            markdown.appendMarkdown(t('This line has local changes that have not been committed.'));
             return markdown;
         }
 
-        const authorName = blame.isCurrentUser ? 'You' : blame.author;
+        const authorName = blame.isCurrentUser ? t('You') : blame.author;
         const author = formatAuthorLink(authorName, blame.authorEmail);
         const avatar = formatAvatar(blame.authorEmail, authorName, this.configurator.isLineBlameAvatarEnabled());
-        const authoredAt = new Intl.DateTimeFormat(vscode.env.language, {
+        const authoredAt = new Intl.DateTimeFormat(displayLocale, {
             dateStyle: 'medium',
             timeStyle: 'short',
         }).format(blame.authoredAt);
@@ -188,7 +189,7 @@ export class BlameRunner implements vscode.Disposable {
             `${avatar} ${author} &nbsp; $(history) ${escapeMarkdown(relativeTime)} _(${escapeMarkdown(authoredAt)})_\n\n`
         );
         markdown.appendMarkdown(`${escapeMarkdown(blame.summary)}\n\n`);
-        markdown.appendMarkdown(`\`${shortHash}\` · [$(copy) Copy hash](command:${COPY_BLAME_HASH_COMMAND}?${commandArgs})`);
+        markdown.appendMarkdown(`\`${shortHash}\` · [$(copy) ${t('Copy hash')}](command:${COPY_BLAME_HASH_COMMAND}?${commandArgs})`);
         return markdown;
     }
 
@@ -224,7 +225,7 @@ function formatAuthorLink(author: string, email?: string): string {
         return `[**${label}**](# "${label}")`;
     }
 
-    const title = `Email ${author} (${email})`.replace(/"/g, '\\"');
+    const title = t('Email {0} ({1})', author, email).replace(/"/g, '\\"');
     return `[**${label}**](mailto:${encodeURIComponent(email)} "${title}")`;
 }
 

@@ -4,6 +4,7 @@ import { AdaptorFactory } from '../adaptor/AdaptorFactory';
 import { PromptFileSystemProvider } from './PromptFileSystemProvider';
 
 const API_KEY_SECRET = 'smartCommitPilot.apiKey';
+const t = vscode.l10n.t;
 
 export class Configurator {
 	private readonly output: vscode.OutputChannel;
@@ -85,7 +86,7 @@ export class Configurator {
 	async setupModel(): Promise<void> {
 		const venderInfo = await this.getBaseURLandSecrets();
 		if (!venderInfo) {
-			vscode.window.showErrorMessage('Smart Git Pilot: please setup the provider first.');
+			vscode.window.showErrorMessage(t('Smart Git Pilot: configure a provider first.'));
 			return;
 		}
 		const { provider, baseUrl, apiKey } = venderInfo;
@@ -93,7 +94,7 @@ export class Configurator {
 		let models: string[];
 		try {
 			models = await vscode.window.withProgress(
-				{ location: vscode.ProgressLocation.Notification, title: 'Fetching available models...' },
+				{ location: vscode.ProgressLocation.Notification, title: t('Fetching available models…') },
 				async () => {
 					const adaptor = AdaptorFactory.create(provider as Venders, baseUrl, apiKey);
 					return adaptor.listModels();
@@ -101,16 +102,16 @@ export class Configurator {
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			vscode.window.showErrorMessage(`Smart Git Pilot: failed to fetch models. ${message}`);
+			vscode.window.showErrorMessage(t('Smart Git Pilot: could not fetch models. {0}', message));
 			return;
 		}
 
 		if (models.length === 0) {
-			vscode.window.showWarningMessage('Smart Git Pilot: no models available for the configured provider.');
+			vscode.window.showWarningMessage(t('Smart Git Pilot: the configured provider has no available models.'));
 			return;
 		}
 
-		const model = await vscode.window.showQuickPick(models, { placeHolder: 'Select a model' });
+		const model = await vscode.window.showQuickPick(models, { placeHolder: t('Select a model') });
 		if (!model) {
 			return;
 		}
@@ -130,7 +131,7 @@ export class Configurator {
 			a === currentProvider ? -1 : b === currentProvider ? 1 : 0
 		);
 		const providerInput = await vscode.window.showQuickPick(providerOptions, {
-			placeHolder: 'Select a provider',
+			placeHolder: t('Select a provider'),
 		});
 
 		// handle empty selection
@@ -140,10 +141,10 @@ export class Configurator {
 		}
 
 		const baseUrlInput = await vscode.window.showInputBox({
-			prompt: 'Enter the Base URL',
+			prompt: t('Enter the base URL'),
 			// reuse the previously configured base url for this provider, otherwise fall back to its default
 			value: provider === currentProvider && currentBaseUrl ? currentBaseUrl : DEFAULT_BASE_URLS[provider],
-			validateInput: (value) => (value.trim() ? null : 'Base URL is required!!!'),
+			validateInput: (value) => (value.trim() ? null : t('A base URL is required.')),
 		});
 		const baseUrl = baseUrlInput?.trim();
 		if (!baseUrl) {
@@ -151,9 +152,9 @@ export class Configurator {
 		}
 
 		const apiKeyInput = await vscode.window.showInputBox({
-			prompt: currentApiKey ? 'Enter the API Key (leave blank to keep the existing one)' : 'Enter the API Key',
+			prompt: currentApiKey ? t('Enter an API key, or leave blank to keep the current key') : t('Enter the API key'),
 			password: true,
-			validateInput: (value) => (value.trim() || currentApiKey ? null : 'API Key is required!!!'),
+			validateInput: (value) => (value.trim() || currentApiKey ? null : t('An API key is required.')),
 		});
 		// undefined means the user cancelled, as opposed to submitting an empty string to keep the existing key
 		if (apiKeyInput === undefined) {

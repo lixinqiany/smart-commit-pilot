@@ -6,6 +6,7 @@ import { Venders } from '../configuration/configuration.constants';
 import { MessageRole } from '../adaptor/unified-protocols/request';
 
 const MAX_OUTPUT_TOKENS = 1024;
+const t = vscode.l10n.t;
 
 const PROMPT_PREFIX =
     'You are a commit message generator. Given a git diff of staged changes, write a single commit message following the Conventional Commits specification, validated against @commitlint/config-conventional rules.';
@@ -17,37 +18,40 @@ export class CommitGenerator {
     ) {}
 
     async run(rootUri?: vscode.Uri): Promise<void> {
-        this.configurator.log(`generate triggered for rootUri=${rootUri?.toString() ?? '(default repo)'}`);
+        this.configurator.log(rootUri ? t('Generating for {0}.', rootUri.toString()) : t('Generating for the default repository.'));
 
         const repository = this.gitService.getRepository(rootUri);
-        this.configurator.log(`resolved repository rootUri=${repository.rootUri.toString()}`);
+        this.configurator.log(t('Repository: {0}', repository.rootUri.toString()));
 
         if (!this.gitService.hasStagedChanges(repository)) {
-            this.configurator.log('no staged changes, aborting');
-            vscode.window.showWarningMessage('Smart Git Pilot: no staged changes to generate a commit message from.');
+            const message = t('Smart Git Pilot: stage changes before generating a commit message.');
+            this.configurator.log(message);
+            vscode.window.showWarningMessage(message);
             return;
         }
 
         const venderInfo = await this.configurator.getBaseURLandSecrets();
         if (!venderInfo) {
-            this.configurator.log('no vendor configured, aborting');
-            vscode.window.showErrorMessage('Smart Git Pilot: please setup the provider first.');
+            const message = t('Smart Git Pilot: configure a provider first.');
+            this.configurator.log(message);
+            vscode.window.showErrorMessage(message);
             return;
         }
         const model = this.configurator.getModel();
         if (!model) {
-            this.configurator.log('no model selected, aborting');
-            vscode.window.showErrorMessage('Smart Git Pilot: please select a model first.');
+            const message = t('Smart Git Pilot: select a model first.');
+            this.configurator.log(message);
+            vscode.window.showErrorMessage(message);
             return;
         }
-        this.configurator.log(`using provider=${venderInfo.provider} model=${model}`);
+        this.configurator.log(t('Using provider {0} and model {1}.', venderInfo.provider, model));
 
         try {
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Generating commit message...' },
+                { location: vscode.ProgressLocation.Notification, title: t('Generating commit message…') },
                 async () => {
                     const diff = await this.gitService.getStagedDiff(repository);
-                    this.configurator.log(`staged diff fetched (${diff.length} chars)`);
+                    this.configurator.log(t('Read staged changes ({0} characters).', diff.length));
 
                     const adaptor = AdaptorFactory.create(venderInfo.provider as Venders, venderInfo.baseUrl, venderInfo.apiKey);
                     const response = await adaptor.createMessage({
@@ -56,10 +60,10 @@ export class CommitGenerator {
                         max_output_tokens: MAX_OUTPUT_TOKENS,
                         messages: [{ role: MessageRole.USER, content: diff }],
                     });
-                    this.configurator.log(`received response with ${response.content.length} content part(s)`);
+                    this.configurator.log(t('Response parts received: {0}.', response.content.length));
                     if (response.usage) {
                         this.configurator.log(
-                            `token usage: input=${response.usage.input_tokens} output=${response.usage.output_tokens}`
+                            t('Token usage: {0} input, {1} output.', response.usage.input_tokens, response.usage.output_tokens)
                         );
                     }
 
@@ -67,15 +71,16 @@ export class CommitGenerator {
                         .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
                         .map((part) => part.text)
                         .join('\n');
-                    this.configurator.log(`writing commit message (${message.length} chars) to input box`);
+                    this.configurator.log(t('Writing the commit message ({0} characters).', message.length));
                     this.gitService.setCommitMessage(message, repository);
                 }
             );
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             const stack = error instanceof Error && error.stack ? `\n${error.stack}` : '';
-            this.configurator.log(`generate failed: ${message}${stack}`);
-            vscode.window.showErrorMessage(`Smart Git Pilot: failed to generate commit message. ${message}`);
+            const notification = t('Smart Git Pilot: could not generate a commit message. {0}', message);
+            this.configurator.log(notification + stack);
+            vscode.window.showErrorMessage(notification);
         }
     }
 }

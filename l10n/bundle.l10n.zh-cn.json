@@ -172,6 +172,7 @@
   "Generate drafts with AI": "用 AI 生成草稿",
   "Group manually": "手动分组",
   "AI receives the selected changes. Manual grouping runs locally.": "生成时会将所选改动发送给 AI。手动分组在本机完成。",
+  "The model response was interrupted.": "模型响应中断。",
   "Preparing drafts…": "正在准备草稿…",
   "Regroup all drafts with AI…": "用 AI 重新分组全部草稿…",
   "Split this draft with AI…": "用 AI 拆分此草稿…",

@@ -68,6 +68,7 @@ suite('Commit message prompt caching', () => {
         assert.equal(repo.inputBox.value, subject, log.join('\n'));
         assert.equal(requests.length, 1);
         assert.equal(requests[0].body.model, model);
+        assert.equal(requests[0].body.stream, true);
         return { ...requests[0], log };
     }
 

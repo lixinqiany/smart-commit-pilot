@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { l10n } from 'vscode';
 import type {
     Response as OpenAIResponse,
     ResponseCreateParamsNonStreaming,
@@ -6,7 +7,7 @@ import type {
     ResponseOutputMessage,
     ResponseOutputText,
 } from 'openai/resources/responses/responses';
-import { BaseAdaptor } from './BaseAdaptor';
+import { BaseAdaptor, OnModelProgress } from './BaseAdaptor';
 import { Venders } from '../configuration/configuration.constants';
 import { MessageCreationRequest, MessageContentList, MessageRole } from './unified-protocols/request';
 import { MessageCreationResponse, Usage } from './unified-protocols/response';
@@ -21,7 +22,7 @@ function supportsExplicitPromptCaching(model: string): boolean {
     return major > 5 || (major === 5 && minor >= 6);
 }
 
-export class OpenAIAdaptor extends BaseAdaptor {
+export class OpenAIAdaptor extends BaseAdaptor<ResponseCreateParamsNonStreaming, OpenAIResponse> {
     readonly #client: OpenAI;
 
     constructor(baseURL: string, apiKey: string, provider: Venders) {
@@ -54,8 +55,26 @@ export class OpenAIAdaptor extends BaseAdaptor {
         return body;
     }
 
-    protected async send(request: ResponseCreateParamsNonStreaming, signal?: AbortSignal): Promise<OpenAIResponse> {
+    protected sendBuffered(request: ResponseCreateParamsNonStreaming, signal?: AbortSignal): Promise<OpenAIResponse> {
         return this.#client.responses.create(request, { signal });
+    }
+
+    protected async sendStream(request: ResponseCreateParamsNonStreaming, signal: AbortSignal | undefined,
+        onText: (delta: string) => void, onProgress: OnModelProgress): Promise<OpenAIResponse> {
+        const { data, response } = await this.#client.responses.create({ ...request, stream: true }, { signal }).withResponse();
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('application/json')) {
+            onProgress('buffered');
+            return await response.json() as OpenAIResponse;
+        }
+        if (contentType?.includes('text/event-stream')) { onProgress('connected'); }
+        for await (const event of data) {
+            if (event.type === 'response.output_text.delta') { onText(event.delta); }
+            if (event.type === 'response.completed') { return event.response; }
+            if (event.type === 'response.failed') { throw new Error(event.response.error?.message || l10n.t('The model response was interrupted.')); }
+            if (event.type === 'error') { throw new Error(event.message); }
+        }
+        throw new Error(l10n.t('The model response was interrupted.'));
     }
 
     protected toUnifiedResponse(response: OpenAIResponse): MessageCreationResponse {

@@ -6,6 +6,15 @@ import { API, GitExtension, Repository } from './typings/git';
 const ZERO_HASH = '0000000000000000000000000000000000000000';
 const MAX_GIT_OUTPUT_BYTES = 1024 * 1024;
 
+export interface BranchRef {
+    readonly ref: string;
+    readonly name: string;
+    readonly remote: boolean;
+    readonly current: boolean;
+    readonly upstream: string;
+    readonly date: Date;
+}
+
 export interface BlameInfo {
     hash: string;
     author: string;
@@ -60,7 +69,7 @@ export function parseLineBlame(output: string, identity: GitIdentity = {}): Blam
 }
 
 export class GitService {
-    readonly #api: API;
+    readonly api: API;
     readonly #identityCache = new WeakMap<Repository, Promise<GitIdentity>>();
 
     constructor() {
@@ -68,11 +77,11 @@ export class GitService {
         if (!extension) {
             throw new Error('vscode.git extension is not available.');
         }
-        this.#api = extension.exports.getAPI(1);
+        this.api = extension.exports.getAPI(1);
     }
 
     getRepository(rootUri?: vscode.Uri): Repository {
-        const repositories = this.#api.repositories;
+        const repositories = this.api.repositories;
         if (repositories.length === 0) {
             throw new Error('No git repository found in the current workspace.');
         }
@@ -88,7 +97,7 @@ export class GitService {
     }
 
     getRepositoryForUri(uri: vscode.Uri): Repository | undefined {
-        return this.#api.getRepository(uri) ?? undefined;
+        return this.api.getRepository(uri) ?? undefined;
     }
 
     hasStagedChanges(repository: Repository = this.getRepository()): boolean {
@@ -101,6 +110,44 @@ export class GitService {
 
     setCommitMessage(message: string, repository: Repository = this.getRepository()): void {
         repository.inputBox.value = message;
+    }
+
+    async getBranches(repository: Repository): Promise<BranchRef[]> {
+        // Full refs distinguish namesakes, and Git forbids tabs and newlines in ref names.
+        const output = await this.#runGit(repository.rootUri.fsPath, [
+            'for-each-ref', '--sort=refname', '--sort=-HEAD',
+            '--format=%(refname)%09%(HEAD)%09%(upstream)%09%(committerdate:unix)%09%(symref)',
+            'refs/heads', 'refs/remotes',
+        ], '', undefined, 32 * 1024 * 1024);
+        const branches: BranchRef[] = [];
+        for (const line of output.split(/\r?\n/)) {
+            const [ref, head, upstream, timestamp, symbolicTarget] = line.split('\t');
+            if (ref && !symbolicTarget) {
+                branches.push({
+                    ref, name: ref.replace(/^refs\/(heads|remotes)\//, ''), current: head === '*',
+                    remote: ref.startsWith('refs/remotes/'), upstream,
+                    date: new Date(Number(timestamp) * 1000),
+                });
+            }
+        }
+        return branches;
+    }
+
+    async switchBranch(repository: Repository, name: string): Promise<void> {
+        await this.#runGit(repository.rootUri.fsPath, ['switch', '--no-guess', '--', name]);
+    }
+
+    async createBranch(repository: Repository, name: string, startRef: string,
+        mode: 'switch' | 'create' | 'track'): Promise<void> {
+        const cwd = repository.rootUri.fsPath;
+        // check-ref-format --branch can expand @{-n}. Only accept the literal name the user entered.
+        const checked = await this.#runGit(cwd, ['check-ref-format', '--branch', name]);
+        if (checked.trimEnd() !== name) {
+            throw new Error(vscode.l10n.t('Enter a literal branch name.'));
+        }
+        const args = mode === 'create' ? ['branch', '--no-track', '--', name, startRef]
+            : ['switch', mode === 'track' ? '--track' : '--no-track', '-c', name, '--', startRef];
+        await this.#runGit(cwd, args);
     }
 
     async getLineBlame(
@@ -155,11 +202,11 @@ export class GitService {
     #runGit(
         cwd: string,
         args: readonly string[],
-        stdin: string,
-        signal?: AbortSignal
+        stdin = '',
+        signal?: AbortSignal,
+        maxOutputBytes = MAX_GIT_OUTPUT_BYTES
     ): Promise<string> {
-        const configuredGitPath = vscode.workspace.getConfiguration('git').get<string>('path')?.trim();
-        const gitPath = configuredGitPath || 'git';
+        const gitPath = this.api.git.path;
 
         return new Promise((resolve, reject) => {
             const child = spawn(gitPath, [...args], {
@@ -183,7 +230,7 @@ export class GitService {
 
             child.stdout.on('data', (chunk: Buffer) => {
                 outputSize += chunk.length;
-                if (outputSize > MAX_GIT_OUTPUT_BYTES) {
+                if (outputSize > maxOutputBytes) {
                     child.kill();
                     finish(() => reject(new Error('Git output exceeded the maximum buffer size.')));
                     return;

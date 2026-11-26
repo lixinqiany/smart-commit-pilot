@@ -1,6 +1,6 @@
 # Smart Git Pilot
 
-Generate AI-powered commit messages and inspect current-line Git history directly in VS Code.
+Manage Git branches, inspect current-line history, and generate AI-powered commit messages in VS Code.
 
 ## Features
 
@@ -12,13 +12,22 @@ Generate AI-powered commit messages and inspect current-line Git history directl
 - **Model picker** — fetches the live list of models available to your account/provider and lets you pick one, instead of hardcoding a model name.
 - **Current line blame** — shows the author, relative time, and commit summary for the active line, with full details and a copyable hash on hover. Local edits are marked as uncommitted without losing history for unchanged lines.
 
+## Branches
+
+Open **Source Control → Smart Git Pilot**. The two icons beside the view title select local branches (three connected dots) or remotes (cloud). The active icon has an underline. Each workspace remembers the last view and the local branch layout.
+
+- **Branches (N)** shows a flat list of full local branch names by default. Hover or focus the count row and select **View as Tree** to group other branches by slash-separated prefixes. A shared path such as `feature/mobile` appears as one folder. Select **View as List** to return to the flat list. The count row also offers switch, create (**+**), and refresh actions. The checked-out branch stays first and uses a branch icon with solid nodes and a **Current** label, even when another row is hovered.
+- **Remotes (N)** is a fixed heading. Each remote, such as `origin`, starts collapsed. Expand it to see fetched branches by their full name within that remote, such as `feature/login`. Empty remotes appear as plain rows. The heading’s **+** adds a remote by name and URL. Use **Git: Fetch** to retrieve remote refs.
+- Click a branch to see its actions. Switching to a remote branch reuses a local tracking branch or offers to create one. To start a branch, pick a base and choose whether to switch after creation.
+- In multi-repository workspaces the count row and its actions belong to the repository shown above it.
+
 ## Requirements
 
 - The built-in **Git** extension (`vscode.git`) must be enabled — Smart Git Pilot reads staged changes and repository history through it.
-- An API key for one of the supported providers:
+- Branch operations require Git 2.23 or later and an open repository.
+- AI commit generation requires staged changes and an API key for one of the supported providers:
   - [OpenAI](https://platform.openai.com/api-keys)
   - [Anthropic](https://console.anthropic.com/settings/keys)
-- A git repository open in the workspace with at least one staged change.
 
 ## Getting Started
 

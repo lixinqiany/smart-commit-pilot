@@ -1,0 +1,18 @@
+{
+  "branches.view": "Smart Git Pilot",
+  "branches.welcome": "打开 Git 仓库即可查看和管理分支。",
+  "branches.switch": "切换分支…",
+  "branches.create": "创建分支…",
+  "branches.refresh": "刷新分支",
+  "branches.switchTo": "切换到此分支…",
+  "branches.createFrom": "从此分支创建…",
+  "branches.local": "本地分支",
+  "branches.localActive": "本地分支（已选中）",
+  "branches.remote": "远端仓库",
+  "branches.remoteActive": "远端仓库（已选中）",
+  "branches.addRemote": "添加远端…",
+  "branches.listLayout": "以列表显示",
+  "branches.treeLayout": "以树形显示",
+  "branches.currentColor": "Smart Git Pilot 中当前本地分支标记的颜色。",
+  "branches.currentIcon": "用实心节点表示当前检出的分支。"
+}

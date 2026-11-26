@@ -7,6 +7,7 @@ import { AdaptorFactory } from './modules/adaptor/AdaptorFactory';
 import { Venders } from './modules/configuration/configuration.constants';
 import { OpenAIAdaptor } from './modules/adaptor/OpenAIAdaptor';
 import { AnthropicAdaptor } from './modules/adaptor/AnthropicAdaptor';
+import { BranchesView } from './modules/git/BranchesView';
 import { GitService } from './modules/git/GitService';
 import { CommitGenerator } from './modules/git/CommitGenerator';
 import { BlameRunner, COPY_BLAME_HASH_COMMAND } from './modules/git/BlameRunner';
@@ -30,6 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		blameRunner,
+		new BranchesView(gitService, context.workspaceState),
 		vscode.workspace.registerFileSystemProvider(
 			PromptFileSystemProvider.scheme,
 			new PromptFileSystemProvider(configurator),

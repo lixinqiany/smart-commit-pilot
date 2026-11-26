@@ -37,6 +37,8 @@ export interface Change {
 }
 
 export interface RepositoryState {
+    readonly HEAD: { readonly name?: string; readonly commit?: string } | undefined;
+    readonly remotes: { readonly name: string }[];
     readonly indexChanges: Change[];
     readonly workingTreeChanges: Change[];
     readonly onDidChange: Event<void>;
@@ -47,16 +49,19 @@ export interface Repository {
     readonly inputBox: InputBox;
     readonly state: RepositoryState;
 
+    addRemote(name: string, url: string): Promise<void>;
     diff(cached?: boolean): Promise<string>;
     getConfig(key: string): Promise<string>;
 }
 
 export interface API {
+    readonly git: { readonly path: string };
     readonly repositories: Repository[];
     readonly onDidOpenRepository: Event<Repository>;
     readonly onDidCloseRepository: Event<Repository>;
 
     getRepository(uri: Uri): Repository | null;
+    openRepository(root: Uri): Promise<Repository | null>;
 }
 
 export interface GitExtension {

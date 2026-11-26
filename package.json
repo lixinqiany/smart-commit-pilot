@@ -1,8 +1,8 @@
 {
   "name": "smart-commit-pilot",
   "displayName": "Smart Git Pilot",
-  "description": "Generate AI-powered commit messages and inspect current-line Git history directly in VS Code.",
-  "version": "0.1.0",
+  "description": "Manage Git branches, inspect current-line history, and generate AI-powered commit messages in VS Code.",
+  "version": "0.2.7",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -63,6 +63,90 @@
         "command": "smart-commit-pilot.toggleLineBlame",
         "title": "Toggle Current Line Blame",
         "category": "Smart Git Pilot"
+      },
+      {
+        "command": "smart-commit-pilot.branches.switch",
+        "title": "%branches.switch%",
+        "category": "Smart Git Pilot",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "smart-commit-pilot.branches.create",
+        "title": "%branches.create%",
+        "category": "Smart Git Pilot",
+        "icon": "$(add)"
+      },
+      {
+        "command": "smart-commit-pilot.branches.refresh",
+        "title": "%branches.refresh%",
+        "category": "Smart Git Pilot",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "smart-commit-pilot.branches.switchTo",
+        "title": "%branches.switchTo%",
+        "category": "Smart Git Pilot",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "smart-commit-pilot.branches.createFrom",
+        "title": "%branches.createFrom%",
+        "category": "Smart Git Pilot",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "smart-commit-pilot.branches.local",
+        "title": "%branches.local%",
+        "category": "Smart Git Pilot",
+        "icon": {
+          "light": "images/branches/local-idle.svg",
+          "dark": "images/branches/local-idle.svg"
+        }
+      },
+      {
+        "command": "smart-commit-pilot.branches.localActive",
+        "title": "%branches.localActive%",
+        "category": "Smart Git Pilot",
+        "icon": {
+          "light": "images/branches/local-on-light.svg",
+          "dark": "images/branches/local-on-dark.svg"
+        }
+      },
+      {
+        "command": "smart-commit-pilot.branches.remote",
+        "title": "%branches.remote%",
+        "category": "Smart Git Pilot",
+        "icon": {
+          "light": "images/branches/remote-idle.svg",
+          "dark": "images/branches/remote-idle.svg"
+        }
+      },
+      {
+        "command": "smart-commit-pilot.branches.remoteActive",
+        "title": "%branches.remoteActive%",
+        "category": "Smart Git Pilot",
+        "icon": {
+          "light": "images/branches/remote-on-light.svg",
+          "dark": "images/branches/remote-on-dark.svg"
+        }
+      },
+      {
+        "command": "smart-commit-pilot.branches.addRemote",
+        "title": "%branches.addRemote%",
+        "category": "Smart Git Pilot",
+        "icon": "$(add)"
+      },
+      {
+        "command": "smart-commit-pilot.branches.listLayout",
+        "title": "%branches.listLayout%",
+        "category": "Smart Git Pilot",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "smart-commit-pilot.branches.treeLayout",
+        "title": "%branches.treeLayout%",
+        "category": "Smart Git Pilot",
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
@@ -71,6 +155,106 @@
           "command": "smart-commit-pilot.generateCommitMessage",
           "when": "scmProvider == git",
           "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "smart-commit-pilot.branches.localActive",
+          "when": "view == smart-commit-pilot.branches && smart-commit-pilot.branches.mode != remote",
+          "group": "navigation@1"
+        },
+        {
+          "command": "smart-commit-pilot.branches.local",
+          "when": "view == smart-commit-pilot.branches && smart-commit-pilot.branches.mode == remote",
+          "group": "navigation@1"
+        },
+        {
+          "command": "smart-commit-pilot.branches.remote",
+          "when": "view == smart-commit-pilot.branches && smart-commit-pilot.branches.mode != remote",
+          "group": "navigation@2"
+        },
+        {
+          "command": "smart-commit-pilot.branches.remoteActive",
+          "when": "view == smart-commit-pilot.branches && smart-commit-pilot.branches.mode == remote",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "smart-commit-pilot.branches.switchTo",
+          "when": "view == smart-commit-pilot.branches && viewItem == pilotBranch",
+          "group": "navigation@1"
+        },
+        {
+          "command": "smart-commit-pilot.branches.createFrom",
+          "when": "view == smart-commit-pilot.branches && (viewItem == pilotBranch || viewItem == pilotCurrentBranch)",
+          "group": "navigation@2"
+        },
+        {
+          "command": "smart-commit-pilot.branches.switch",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilotLocal(Tree|List)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "smart-commit-pilot.branches.create",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilotLocal(Tree|List)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "smart-commit-pilot.branches.addRemote",
+          "when": "view == smart-commit-pilot.branches && viewItem == pilotRemote",
+          "group": "inline@2"
+        },
+        {
+          "command": "smart-commit-pilot.branches.listLayout",
+          "when": "view == smart-commit-pilot.branches && viewItem == pilotLocalTree",
+          "group": "inline@3"
+        },
+        {
+          "command": "smart-commit-pilot.branches.treeLayout",
+          "when": "view == smart-commit-pilot.branches && viewItem == pilotLocalList",
+          "group": "inline@3"
+        },
+        {
+          "command": "smart-commit-pilot.branches.refresh",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(LocalTree|LocalList|Remote)$/",
+          "group": "inline@4"
+        },
+        {
+          "command": "smart-commit-pilot.branches.switchTo",
+          "when": "view == smart-commit-pilot.branches && viewItem == pilotBranch",
+          "group": "inline@1"
+        },
+        {
+          "command": "smart-commit-pilot.branches.createFrom",
+          "when": "view == smart-commit-pilot.branches && (viewItem == pilotBranch || viewItem == pilotCurrentBranch)",
+          "group": "inline@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "smart-commit-pilot.branches.switchTo",
+          "when": "false"
+        },
+        {
+          "command": "smart-commit-pilot.branches.createFrom",
+          "when": "false"
+        },
+        {
+          "command": "smart-commit-pilot.branches.localActive",
+          "when": "false"
+        },
+        {
+          "command": "smart-commit-pilot.branches.remoteActive",
+          "when": "false"
+        },
+        {
+          "command": "smart-commit-pilot.branches.listLayout",
+          "when": "false"
+        },
+        {
+          "command": "smart-commit-pilot.branches.treeLayout",
+          "when": "false"
         }
       ]
     },
@@ -112,6 +296,44 @@
           "description": "Show Gravatar or generated cartoon avatars in current-line blame hovers."
         }
       }
+    },
+    "views": {
+      "scm": [
+        {
+          "id": "smart-commit-pilot.branches",
+          "name": "%branches.view%",
+          "contextualTitle": "Smart Git Pilot",
+          "icon": "images/scm-icon-dark.svg",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "smart-commit-pilot.branches",
+        "contents": "%branches.welcome%"
+      }
+    ],
+    "colors": [
+      {
+        "id": "smartGitPilot.currentBranchForeground",
+        "description": "%branches.currentColor%",
+        "defaults": {
+          "light": "#16796F",
+          "dark": "#82D8C7",
+          "highContrast": "foreground",
+          "highContrastLight": "foreground"
+        }
+      }
+    ],
+    "icons": {
+      "smart-git-pilot-current-branch": {
+        "description": "%branches.currentIcon%",
+        "default": {
+          "fontPath": "./images/branches/current-branch.woff",
+          "fontCharacter": "\\E001"
+        }
+      }
     }
   },
   "scripts": {
@@ -149,5 +371,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
     "openai": "^6.45.0"
-  }
+  },
+  "l10n": "./l10n"
 }

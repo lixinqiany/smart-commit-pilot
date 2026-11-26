@@ -1,0 +1,18 @@
+{
+  "branches.view": "Smart Git Pilot",
+  "branches.welcome": "Open a Git repository to manage its branches.",
+  "branches.switch": "Switch Branch…",
+  "branches.create": "Create Branch…",
+  "branches.refresh": "Refresh Branches",
+  "branches.switchTo": "Switch to This Branch…",
+  "branches.createFrom": "Create Branch From Here…",
+  "branches.local": "Local Branches",
+  "branches.localActive": "Local Branches (Selected)",
+  "branches.remote": "Remotes",
+  "branches.remoteActive": "Remotes (Selected)",
+  "branches.addRemote": "Add Remote…",
+  "branches.listLayout": "View as List",
+  "branches.treeLayout": "View as Tree",
+  "branches.currentColor": "Color of the checked-out branch indicator in Smart Git Pilot.",
+  "branches.currentIcon": "Branch with filled nodes for the current checkout."
+}

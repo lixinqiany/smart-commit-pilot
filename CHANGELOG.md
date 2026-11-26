@@ -6,6 +6,42 @@ This project follows [Keep a Changelog](http://keepachangelog.com/) conventions.
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-11-26
+
+- Use a cloud icon for each remote in the branch panel.
+
+## [0.2.6] - 2026-11-26
+
+- Made the Remotes heading fixed. Each remote starts collapsed and expands to a flat list of branch names. Layout controls now appear only on local branches.
+
+## [0.2.5] - 2026-11-26
+
+- Added an optional tree layout for local branches with compact prefix folders and the current branch pinned above them.
+
+## [0.2.4] - 2026-11-26
+
+- Use solid nodes on the current branch icon in the local branch list.
+
+## [0.2.3] - 2026-11-26
+
+- Show local branches in a flat list below the count row. The checked-out branch stays at the top and carries a persistent highlight.
+
+## [0.2.2] - 2026-11-26
+
+- Redrew the local and remote toolbar icons with a curved branch, a rounded cloud, and a shorter selection underline.
+
+## [0.2.1] - 2026-11-26
+
+- Added flight-path and satellite-dish tabs to the Smart Git Pilot title bar.
+- Moved branch controls to the count row, added list and tree layouts, and grouped remote branches by remote with an Add Remote action.
+
+## [0.2.0] - 2026-11-26
+
+### Added
+
+- Added a Source Control branch view with local and remote branches, upstreams, and latest commit times.
+- Added switching, tracking a remote branch locally, and creating a branch from the current checkout or a selected branch.
+
 ## [0.1.0] - 2026-07-13
 
 ### Added

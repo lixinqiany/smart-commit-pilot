@@ -9,5 +9,8 @@ export function logTokenUsage(usage: Usage | null, log: (message: string) => voi
     if ('cache_write_tokens' in details) {
         log(t('Prompt cache tokens: {0} read, {1} written.',
             details.cached_tokens ?? t('not reported'), details.cache_write_tokens ?? t('not reported')));
+    } else if ('cache_creation_input_tokens' in details) {
+        log(t('Prompt cache tokens: {0} read, {1} written.',
+            details.cache_read_input_tokens ?? t('not reported'), details.cache_creation_input_tokens ?? t('not reported')));
     }
 }

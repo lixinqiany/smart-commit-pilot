@@ -15,6 +15,8 @@ suite('Commit message prompt caching', () => {
     const diff = 'diff --git a/settings.ts b/settings.ts\n-old\n+new';
     const subject = 'fix: correct timeout';
     let baseUrl: string;
+    let replies: string[] = [];
+    teardown(() => { replies = []; });
     let inputDetails: { cached_tokens: number; cache_write_tokens?: number } | undefined;
     const requests: { path?: string; body: Record<string, unknown> }[] = [];
     const server = createServer(async (req, res) => {
@@ -24,11 +26,12 @@ suite('Commit message prompt caching', () => {
         }
         const body = JSON.parse(raw);
         requests.push({ path: req.url, body });
+        const reply = replies.shift() ?? subject;
         const usage = { input_tokens: 2728, output_tokens: 17, input_tokens_details: inputDetails };
         res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
         res.end(JSON.stringify(req.url === '/v1/messages'
-            ? { model: body.model, content: [{ type: 'text', text: subject }], usage }
-            : { model: body.model, output: [{ type: 'message', content: [{ type: 'output_text', text: subject }] }], usage }));
+            ? { model: body.model, content: [{ type: 'text', text: reply }], usage }
+            : { model: body.model, output: [{ type: 'message', content: [{ type: 'output_text', text: reply }] }], usage }));
     });
 
     suiteSetup(async () => {
@@ -88,6 +91,23 @@ suite('Commit message prompt caching', () => {
             const { log } = await generate('gpt-6.1-sol');
             assert.ok(log.includes(t('Prompt cache tokens: {0} read, {1} written.',
                 inputDetails?.cached_tokens ?? t('not reported'), inputDetails?.cache_write_tokens ?? t('not reported'))));
+        }
+    });
+
+    test('Places the reusable prefix breakpoint on the diff only for both provider protocols', async () => {
+        const messages = [{ role: MessageRole.USER, content: [{ type: 'text' as const, text: diff, cacheBreakpoint: true }] },
+            { role: MessageRole.USER, content: 'Group the edits' }];
+        for (const provider of [Venders.OpenAI, Venders.Anthropic]) {
+            await AdaptorFactory.create(provider, baseUrl, 'test').createMessage({ model: 'gpt-6.1-sol', messages, max_output_tokens: 32 });
+            const payload = requests.at(-1)!.body;
+            if (provider === Venders.OpenAI) {
+                assert.deepEqual(payload.prompt_cache_options, { mode: 'explicit' });
+                assert.deepEqual(payload.input, [{ role: 'user', content: [{ type: 'input_text', text: diff,
+                    prompt_cache_breakpoint: { mode: 'explicit' } }] }, { role: 'user', content: 'Group the edits' }]);
+            } else {
+                assert.deepEqual(payload.messages, [{ role: 'user', content: [{ type: 'text', text: diff,
+                    cache_control: { type: 'ephemeral' } }] }, { role: 'user', content: 'Group the edits' }]);
+            }
         }
     });
 

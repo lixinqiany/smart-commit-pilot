@@ -19,7 +19,8 @@ export class AnthropicAdaptor extends BaseAdaptor {
             content:
                 typeof item.content === 'string'
                     ? item.content
-                    : item.content.map((part) => ({ type: 'text' as const, text: part.text })),
+                    : item.content.map((part) => ({ type: 'text' as const, text: part.text,
+                        ...(part.cacheBreakpoint ? { cache_control: { type: 'ephemeral' as const } } : {}) })),
         }));
 
         return {

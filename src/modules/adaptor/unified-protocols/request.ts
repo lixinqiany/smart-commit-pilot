@@ -6,6 +6,7 @@ export enum MessageRole {
 export interface TextContent {
     type: "text";
     text: string;
+    cacheBreakpoint?: boolean;
 }
 
 export type MessageContent = TextContent;

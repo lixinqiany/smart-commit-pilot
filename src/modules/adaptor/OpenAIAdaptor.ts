@@ -30,12 +30,15 @@ export class OpenAIAdaptor extends BaseAdaptor {
     }
 
     protected toAdaptorSpecifiedRequest(request: MessageCreationRequest): ResponseCreateParamsNonStreaming {
+        const explicit = supportsExplicitPromptCaching(request.model);
+        const reuse = request.messages.some(m => Array.isArray(m.content) && m.content.some(part => part.cacheBreakpoint));
         const input: ResponseInput = request.messages.map((item) => ({
             role: item.role === MessageRole.USER ? 'user' : 'assistant',
             content:
                 typeof item.content === 'string'
                     ? item.content
-                    : item.content.map((part) => ({ type: 'input_text' as const, text: part.text })),
+                    : item.content.map((part) => ({ type: 'input_text' as const, text: part.text,
+                        ...(explicit && part.cacheBreakpoint ? { prompt_cache_breakpoint: { mode: 'explicit' as const } } : {}) })),
         }));
 
         const body: ResponseCreateParamsNonStreaming = {
@@ -44,8 +47,8 @@ export class OpenAIAdaptor extends BaseAdaptor {
             instructions: request.system,
             max_output_tokens: request.max_output_tokens,
         };
-        if (request.avoidCacheWrites && supportsExplicitPromptCaching(request.model)) {
-            // Explicit mode with no breakpoints keeps a one-off diff out of the prompt cache.
+        if (explicit && (request.avoidCacheWrites || reuse)) {
+            // Only the stable snapshot is marked during a multi-round plan.
             body.prompt_cache_options = { mode: 'explicit' };
         }
         return body;

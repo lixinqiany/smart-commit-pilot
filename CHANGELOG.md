@@ -7,8 +7,18 @@ Group related changes under Unreleased during development and assign one version
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-26
+
+### Added
+
+- Split staged or saved changes into commit drafts with a separately configurable AI model. Review each diff and message, lock finished drafts, and ask AI to revise the rest before creating commits.
+- Move files, change blocks, or individual edits between drafts. Complex splits use multiple planning rounds, and the extension verifies each intermediate Git tree before review.
 - Localize commands, settings, AI setup, and line blame for Simplified and Traditional Chinese. Other display languages use English.
 - Delete a local branch from its context menu. The confirmation shows the upstream or fetched same-name remote branches and offers a force toggle.
+
+### Changed
+
+- Reuse the diff prefix across planning rounds on supported providers. One-off commit message requests opt out of implicit cache writes on supported OpenAI models.
 
 ## [0.2.2] - 2026-11-26
 

@@ -5,6 +5,7 @@ import { BRANCH_VIEW as VIEW, BranchMode, BranchNode, BranchTree, EMPTY_FILE_SCH
 import { Repository } from './typings/git';
 import { commitFileDecorations } from './CommitFiles';
 import { pickBranchDeletion } from './branchDeletionPicker';
+import { TaskLog } from '../configuration/TaskLog';
 
 const t = vscode.l10n.t;
 
@@ -13,7 +14,7 @@ export class BranchesView implements vscode.Disposable {
     private readonly listeners = new Map<string, vscode.Disposable>();
     private readonly disposables: vscode.Disposable[];
 
-    constructor(private readonly git: GitService, private readonly state: vscode.Memento) {
+    constructor(private readonly git: GitService, private readonly state: vscode.Memento, private readonly log: (line: string) => void) {
         this.tree = new BranchTree(git, state.get<BranchMode>(VIEW + '.mode', 'local'),
             state.get(VIEW + '.localTree', false), state.get(VIEW + '.allContributors', false));
         void vscode.commands.executeCommand('setContext', VIEW + '.mode', this.tree.mode);
@@ -195,7 +196,10 @@ export class BranchesView implements vscode.Disposable {
         const plan = await this.git.getBranchDeletion(repo, branch.ref);
         const selected = await pickBranchDeletion(plan);
         if (selected) {
-            await this.git.deleteLocalBranch(repo, plan, selected);
+            await TaskLog.run(this.log, 'delete_branch', {
+                repository: repo.rootUri.fsPath, branch: branch.name, force: selected.force,
+                remote: selected.target?.remote, remoteRef: selected.target?.ref,
+            }, task => this.git.deleteLocalBranch(repo, plan, selected, (step, detail) => task.progress(step, detail)));
         }
     }
 

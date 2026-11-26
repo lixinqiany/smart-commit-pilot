@@ -4,13 +4,9 @@ import { Configurator } from '../configuration/Configurator';
 import { logTokenUsage } from '../adaptor/logTokenUsage';
 import { AdaptorFactory } from '../adaptor/AdaptorFactory';
 import { Venders } from '../configuration/configuration.constants';
-import { MessageRole } from '../adaptor/unified-protocols/request';
+import { messageRequest } from './messageRequest';
 
-const MAX_OUTPUT_TOKENS = 1024;
 const t = vscode.l10n.t;
-
-const PROMPT_PREFIX =
-    'You are a commit message generator. Given a git diff of staged changes, write a single commit message following the Conventional Commits specification, validated against @commitlint/config-conventional rules.';
 
 export class CommitGenerator {
     constructor(
@@ -55,13 +51,7 @@ export class CommitGenerator {
                     this.configurator.log(t('Read staged changes ({0} characters).', diff.length));
 
                     const adaptor = AdaptorFactory.create(venderInfo.provider as Venders, venderInfo.baseUrl, venderInfo.apiKey);
-                    const response = await adaptor.createMessage({
-                        model,
-                        avoidCacheWrites: true,
-                        system: `${PROMPT_PREFIX}\n\n${this.configurator.getPrompt()}`,
-                        max_output_tokens: MAX_OUTPUT_TOKENS,
-                        messages: [{ role: MessageRole.USER, content: diff }],
-                    });
+                    const response = await adaptor.createMessage(messageRequest(model, diff, this.configurator.getPrompt()));
                     this.configurator.log(t('Response parts received: {0}.', response.content.length));
                     logTokenUsage(response.usage, line => this.configurator.log(line));
 

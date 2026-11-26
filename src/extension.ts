@@ -27,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const configurator = new Configurator(context);
 	const gitService = new GitService();
 	const commitGenerator = new CommitGenerator(gitService, configurator);
-	const composer = new Composer(context.extensionUri, gitService, configurator);
+	const composer = new Composer(context.extension, gitService, configurator);
 	const blameRunner = new BlameRunner(gitService, configurator);
 	blameRunner.start();
 

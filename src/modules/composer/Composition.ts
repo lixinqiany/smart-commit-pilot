@@ -37,10 +37,17 @@ export class Composition {
     get model(): string { return this.config.getModel('composer.model'); }
     selectModel() { return this.config.setupModel('composer.model'); }
 
-    async paths(scope: Scope): Promise<string[]> {
+    async previewFiles(scope: Scope) {
         const snapshot = await withScratch(dir => this.git.capture(scope, join(dir, 'index')));
-        const raw = await this.git.run(['diff', '--no-renames', '--name-only', '-z', snapshot.base, snapshot.target]);
-        return raw.toString().split('\0').filter(Boolean);
+        const raw = await this.git.run(['diff', '--find-renames', '--name-status', '-z', snapshot.base, snapshot.target]);
+        const parts = raw.toString().split('\0');
+        const files: { path: string; status: string; previousPath?: string }[] = [];
+        for (let i = 0; parts[i];) {
+            const status = parts[i++][0];
+            const path = parts[i++];
+            files.push(status === 'R' || status === 'C' ? { status, previousPath: path, path: parts[i++] } : { status, path });
+        }
+        return files;
     }
 
     async start(scope: Scope, guidance: string, manual: boolean, signal: AbortSignal, depth: Depth = 'auto') {

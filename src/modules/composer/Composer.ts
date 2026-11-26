@@ -13,7 +13,7 @@ const t = vscode.l10n.t;
 export class Composer {
     private readonly panels = new Map<string, ReviewPanel>();
 
-    constructor(private readonly extensionUri: vscode.Uri, private readonly service: GitService,
+    constructor(private readonly extension: vscode.Extension<unknown>, private readonly service: GitService,
         private readonly config: Configurator) {}
 
     dispose(): void { for (const panel of this.panels.values()) { panel.dispose(); } }
@@ -34,7 +34,9 @@ export class Composer {
             const existing = this.panels.get(path);
             if (existing) { existing.reveal(); return; }
             const git = new ComposerGit(path, this.service.api.git.path);
-            const panel = new ReviewPanel(this.extensionUri, basename(path), this.service.hasStagedChanges(repo),
+            const heading = { product: this.extension.packageJSON.displayName as string, repo: basename(path),
+                showRepo: this.service.api.repositories.length > 1 };
+            const panel = new ReviewPanel(this.extension.extensionUri, heading, this.service.hasStagedChanges(repo),
                 new Composition(git, this.config),
                 async reviewed => {
                     const sign = vscode.workspace.getConfiguration('git', repo.rootUri).get<boolean>('enableCommitSigning', false);

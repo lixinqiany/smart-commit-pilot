@@ -1,19 +1,21 @@
-import { el, button, modelButton } from './controls.js';
-import { verification, refinement } from './feedback.js';
+import { el, button } from './controls.js';
+import { verification, reviewActions } from './feedback.js';
+import { disclosure, icon, settingsTool } from './panel-tools.js';
 import { scopeView } from './scope.js';
 import { fileDiff } from './diff.js';
 import { changeSelection } from './selection.js';
 
 const vscode = acquireVsCodeApi();
 const root = document.getElementById('review');
-let plan, active = 0, busy = false, scope, model, nav, detail, apply, actions, alert, split;
-let selection, dragging, dropNew, move, refine;
+let plan, active = 0, busy = false, scope, model, nav, detail, actions, alert, pending;
+let selection, dragging, dropNew, move;
 const subject = draft => draft.message.trim().split('\n')[0] || plan.labels.unnamed;
 
 function send(type, fields = {}) {
     if (busy) return;
     alert.hidden = true;
     if (type !== 'cancel') {
+        pending = type;
         busy = true;
         updateControls();
     }
@@ -23,16 +25,15 @@ function send(type, fields = {}) {
 function updateControls() {
     root.setAttribute('aria-busy', String(busy));
     if (scope) {
-        for (const node of scope.form.elements) node.disabled = busy;
+        scope.setBusy(busy);
         return;
     }
-    for (const control of root.querySelectorAll('button, textarea, select, input')) control.disabled = busy;
-    apply.disabled = busy || plan.drafts.some(d => !d.message.trim());
+    for (const control of root.querySelectorAll('button, textarea, select, input')) control.disabled = busy || control.hasAttribute('data-unavailable');
+    actions.update(busy, plan.drafts);
     const locked = !!plan.drafts[active].locked;
     move.disabled = busy || locked || !selection.ids.size;
-    refine.disabled = busy || plan.drafts.every(d => d.locked);
+    move.hidden = !selection.ids.size;
     for (const node of detail.querySelectorAll('input[type=checkbox]')) node.disabled = busy || locked;
-    split.disabled = busy || locked || !plan.drafts[active].canSplit;
 }
 function errorBox() {
     alert = el('div', 'error');
@@ -42,7 +43,7 @@ function errorBox() {
 }
 function select(index, focus = false) {
     active = index;
-    selection = changeSelection(() => { move.disabled = busy || !selection.ids.size; });
+    selection = changeSelection(updateControls);
     nav.querySelectorAll('.draft').forEach((row, i) => {
         row.setAttribute('aria-current', String(i === index));
         row.tabIndex = i === index ? 0 : -1;
@@ -107,38 +108,30 @@ function navRow(draft, index) {
     return row;
 }
 function draftMenu(labels) {
-    const menu = el('select', 'draft-menu');
-    menu.setAttribute('aria-label', labels.actions);
-    menu.add(new Option(labels.actions, ''));
-    menu.options[0].disabled = true;
-    const add = (text, value, enabled = true) => {
-        const option = new Option(text, value);
-        option.disabled = !enabled;
-        menu.add(option);
-    };
+    const tool = disclosure(labels.actions, 'more');
     const free = !plan.drafts[active].locked;
-    add(labels.reword, 'reword', free);
-    add(labels.earlier, 'earlier', free && active > 0 && !plan.drafts[active - 1].locked);
-    add(labels.later, 'later', free && active + 1 < plan.drafts.length && !plan.drafts[active + 1].locked);
-    menu.value = '';
-    menu.addEventListener('change', () => {
-        const value = menu.value;
-        menu.value = '';
-        if (value === 'earlier' || value === 'later') send('reorder', {to: active + (value === 'earlier' ? -1 : 1)});
-        else send(value);
-    });
-    return menu;
+    function action(label, type, enabled, fields = {}) {
+        const item = button(label, 'tool-action', () => { tool.close(); send(type, fields); });
+        if (!enabled) item.setAttribute('data-unavailable', '');
+        tool.panel.append(item);
+        return item;
+    }
+    const split = action(labels.split, 'split', free && plan.drafts[active].canSplit);
+    if (!plan.drafts[active].canSplit) split.title = labels.indivisible;
+    action(labels.reword, 'reword', free);
+    action(labels.earlier, 'reorder', free && active > 0 && !plan.drafts[active - 1].locked, {to: active - 1});
+    action(labels.later, 'reorder', free && active + 1 < plan.drafts.length && !plan.drafts[active + 1].locked, {to: active + 1});
+    return tool.root;
 }
 function renderDetail() {
     const draft = plan.drafts[active], l = plan.labels;
     detail.replaceChildren();
     const head = el('div', 'detail-head');
-    split = button(l.split, 'text-button split-draft', () => send('split'));
-    if (!draft.canSplit) split.title = l.indivisible;
-    const lock = button(draft.locked ? l.unlock : l.lock, 'text-button lock-draft', () => send('lock'));
+    const lock = button(draft.locked ? l.unlock : l.lock, 'lock-draft with-icon', () => send('lock'));
+    lock.prepend(icon(draft.locked ? 'lock' : 'unlock'));
     lock.title = l.lockHint;
     lock.setAttribute('aria-pressed', String(!!draft.locked));
-    head.append(el('span', 'counter', (active + 1) + ' / ' + plan.drafts.length), el('h2', '', l.message), lock, split, draftMenu(l));
+    head.append(el('h2', '', l.message), lock, draftMenu(l));
     const input = el('textarea', 'message');
     input.setAttribute('aria-label', l.message);
     input.placeholder = l.empty;
@@ -152,7 +145,9 @@ function renderDetail() {
     });
     const bar = el('div', 'changes-head');
     move = button(l.move, 'text-button', () => send('move', {edits: [...selection.ids]}));
-    bar.append(el('h3', '', l.changes), el('span', 'count', draft.files.length), move);
+    const fileActions = el('div', 'file-actions');
+    fileActions.append(move);
+    bar.append(el('h3', '', l.changes), el('span', 'count', draft.files.length), fileActions);
     const files = el('div', 'files');
     for (const [i, file] of draft.files.entries()) {
         const box = el('div', 'file-box');
@@ -173,7 +168,7 @@ function renderDetail() {
         const sync = () => { toggle.textContent = boxes.some(f => !f.open) ? l.expand : l.collapse; };
         sync();
         files.addEventListener('toggle', sync, true);
-        bar.append(toggle);
+        fileActions.append(toggle);
     }
     detail.append(head, input, verification(draft.check, l), bar, files);
     detail.scrollTop = 0;
@@ -186,9 +181,10 @@ function renderPlan(data) {
     root.classList.remove('choosing-scope');
     const header = el('header');
     const title = el('div', 'heading');
-    title.append(el('h1', '', l.title), el('div', 'repo', plan.repo + '  /  ' + plan.scope));
-    model = modelButton(plan.model, l.model, () => send('model'));
-    header.append(title, model);
+    title.append(el('h1', '', l.title), el('div', 'repo', [plan.product, plan.repo, plan.scope].filter(Boolean).join(' · ')));
+    const settings = settingsTool(plan, () => send('model'));
+    model = settings.model;
+    header.append(title, settings.root);
     const layout = el('div', 'layout');
     const sidebar = el('aside');
     const heading = el('div', 'section-title');
@@ -202,20 +198,8 @@ function renderPlan(data) {
     sidebar.append(heading, nav, dropNew);
     detail = el('section', 'detail');
     layout.append(sidebar, detail);
-    actions = el('footer');
-    apply = button(l.apply, 'primary', () => send('apply'));
-    const close = () => { form.hidden = true; refine.setAttribute('aria-expanded', 'false'); refine.focus(); };
-    const form = refinement(l, send, close);
-    form.hidden = true;
-    refine = button(l.refine, 'secondary', () => {
-        form.hidden = !form.hidden;
-        refine.setAttribute('aria-expanded', String(!form.hidden));
-        if (!form.hidden) form.querySelector('textarea').focus();
-    });
-    if (plan.drafts.every(d => d.locked)) refine.title = l.allLocked;
-    refine.setAttribute('aria-expanded', 'false');
-    actions.append(form, button(l.cancel, 'text-button', () => send('cancel')), refine, apply);
-    root.replaceChildren(header, layout, errorBox(), actions);
+    actions = reviewActions(l, send, pending === 'refine' ? undefined : actions?.state);
+    root.replaceChildren(header, layout, errorBox(), actions.root);
     if (data.warning) { alert.textContent = data.warning; alert.hidden = false; }
     select(data.active, true);
 }
@@ -228,7 +212,7 @@ window.addEventListener('message', ({data}) => {
         }, action => vscode.postMessage(action));
         model = scope.model;
         root.replaceChildren(scope.form, errorBox());
-        scope.form.querySelector('input:checked').focus();
+        scope.title.focus({preventScroll: true});
     }
     if (data.type === 'files') scope?.showFiles(data);
     if (data.type === 'model' && model) {
@@ -237,6 +221,6 @@ window.addEventListener('message', ({data}) => {
     }
     if (data.type === 'plan') renderPlan(data);
     if (data.type === 'error') { alert.textContent = data.text; alert.hidden = false; }
-    if (data.type === 'idle') { busy = false; if (scope) scope.status.textContent = ''; updateControls(); }
+    if (data.type === 'idle') { pending = undefined; busy = false; if (scope) scope.status.textContent = ''; updateControls(); }
 });
 vscode.postMessage({type: 'ready'});

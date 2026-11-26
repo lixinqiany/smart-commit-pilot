@@ -19,7 +19,8 @@ export class ReviewPanel {
     private plan?: Plan;
     private readonly lifetime = new AbortController();
 
-    constructor(extensionUri: vscode.Uri, private readonly repo: string, private readonly stagedFirst: boolean,
+    constructor(extensionUri: vscode.Uri, private readonly heading: { product: string; repo: string; showRepo: boolean },
+        private readonly stagedFirst: boolean,
         private readonly composition: Composition,
         private readonly commit: (plan: Plan) => Promise<void>, onClose: () => void) {
         const resources = vscode.Uri.joinPath(extensionUri, 'media', 'composer');
@@ -37,7 +38,7 @@ export class ReviewPanel {
         const asset = (name: string) => web.asWebviewUri(vscode.Uri.joinPath(resources, name)).toString();
         web.html = `<!doctype html><html lang="${vscode.env.language}"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${web.cspSource}; script-src ${web.cspSource} 'nonce-${nonce}';">
-<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${asset('review.css')}"></head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${asset('review.css')}"><link rel="stylesheet" href="${asset('scope.css')}"></head>
 <body><main id="review"></main><script type="module" nonce="${nonce}" src="${asset('review.js')}"></script></body></html>`;
     }
 
@@ -46,18 +47,19 @@ export class ReviewPanel {
 
     private show(active = 0): void {
         const model = this.composition.model;
+        const context = { product: this.heading.product, repo: this.heading.showRepo ? this.heading.repo : undefined };
         if (!this.plan) {
             const choices = [
-                { scope: 'staged', title: t('Staged changes'), detail: t('Only the changes selected with + or git add') },
+                { scope: 'staged', title: t('Staged changes'), detail: t('Changes selected with + or git add.') },
                 { scope: 'working', title: t('All saved changes'),
-                    detail: t('New, edited and deleted files, even if unstaged. Skips ignored new files.') },
+                    detail: t('Includes staged edits, unstaged edits and new files Git can track.') },
             ];
-            void this.panel.webview.postMessage({ type: 'scopes', repo: this.repo, model, labels: scopeLabels(),
+            void this.panel.webview.postMessage({ type: 'scopes', ...context, model, labels: scopeLabels(),
                 choices: this.stagedFirst ? choices : choices.reverse() });
             return;
         }
         this.panel.title = t('Review split commits');
-        void this.panel.webview.postMessage({ type: 'plan', repo: this.repo, model, revision: ++this.revision, active, warning: this.plan.warning,
+        void this.panel.webview.postMessage({ type: 'plan', ...context, model, revision: ++this.revision, active, warning: this.plan.warning,
             scope: this.plan.snapshot.scope === 'working' ? t('All saved changes') : t('Staged changes'),
             drafts: this.plan.drafts.map(({ message, files, edits, locked, check }) => ({ message, files, locked, check, canSplit: edits.length > 1 })),
             labels: reviewLabels(this.plan.drafts.length) });
@@ -71,11 +73,11 @@ export class ReviewPanel {
         const signal = this.lifetime.signal;
         if (!action || signal.aborted) { return; }
         if (action.type === 'ready') { this.show(); return; }
-        if (action.type === 'cancel' && (!this.plan || !this.busy)) { this.dispose(); return; }
+        if (action.type === 'cancel' && !this.plan) { this.dispose(); return; }
         if (!this.plan && action.type === 'files' && (action.scope === 'working' || action.scope === 'staged')) {
             try {
-                const paths = await this.composition.paths(action.scope);
-                if (!signal.aborted) { void this.panel.webview.postMessage({ type: 'files', request: action.request, paths }); }
+                const files = await this.composition.previewFiles(action.scope);
+                if (!signal.aborted) { void this.panel.webview.postMessage({ type: 'files', request: action.request, files }); }
             } catch (err) {
                 if (!signal.aborted) { void this.panel.webview.postMessage({ type: 'files', request: action.request, error: String(err) }); }
             }
@@ -153,13 +155,13 @@ export class ReviewPanel {
         const drafts = plan.drafts.map(d => ({ ...d, message: d.message.trim() }));
         if (drafts.some(d => !d.message)) { throw new Error(t('Each draft needs a valid commit message.')); }
         const button = t('Create commits');
-        const choice = await vscode.window.showWarningMessage(t('Create the reviewed commits in {0}?', this.repo),
+        const choice = await vscode.window.showWarningMessage(t('Create the reviewed commits in {0}?', this.heading.repo),
             { modal: true, detail: drafts.map((d, i) => (i + 1) + '. ' + d.message.split('\n')[0] +
                 (d.check?.issues.length ? ' · ' + t('New issues ({0})', d.check.issues.length) : '')).join('\n') }, button);
         if (choice !== button || this.lifetime.signal.aborted) { return; }
         await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('Creating reviewed commits…') },
             () => this.commit({ ...plan, drafts }));
         this.dispose();
-        void vscode.window.showInformationMessage(t('Created {0} commits in {1}.', drafts.length, this.repo));
+        void vscode.window.showInformationMessage(t('Created {0} commits in {1}.', drafts.length, this.heading.repo));
     }
 }

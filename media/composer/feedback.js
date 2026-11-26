@@ -1,9 +1,13 @@
 import { el, button } from './controls.js';
+import { icon } from './panel-tools.js';
 
 export function verification(check, l) {
     const box = el('div', 'verification');
     if (!check) return box;
-    box.append(el('span', '', l.checked + ' · ' + check.checks.join(' · ')));
+    const status = el('span', 'check-summary');
+    if (!check.skipped && !check.issues.length) status.append(icon('check'));
+    status.append([l.checked, ...check.checks].join(' · '));
+    box.append(status);
     if (check.existing) box.append(el('span', 'meta', l.existing + ' · ' + check.existing));
     if (check.skipped) box.append(el('div', 'check-warning', check.skipped));
     if (check.issues.length) {
@@ -21,24 +25,55 @@ export function verification(check, l) {
     return box;
 }
 
-export function refinement(l, send, close) {
+export function reviewActions(l, send, previous) {
+    const root = el('footer');
+    const toolbar = el('div', 'review-actions');
+    const refine = button(l.refine, 'secondary with-icon', () => showForm(true));
+    refine.prepend(icon('compose'));
+    const apply = button(l.apply, 'primary', () => send('apply'));
+    toolbar.append(refine, apply);
+
     const form = el('form', 'refinement');
+    form.id = 'refinement';
+    refine.setAttribute('aria-controls', form.id);
     const label = el('label', 'guidance-label', l.refineLabel);
-    const input = el('textarea', 'guidance');
-    input.id = 'refine-instructions';
+    label.prepend(icon('compose'));
+    const input = el('textarea', 'scope-input');
+    input.id = label.htmlFor = 'refine-instructions';
     input.rows = 2;
     input.placeholder = l.refineExample;
-    label.htmlFor = input.id;
-    const actions = el('div', 'scope-actions');
+    input.value = previous?.text ?? '';
+    const actions = el('div', 'refinement-actions');
     const submit = el('button', 'primary', l.update);
     submit.type = 'submit';
-    actions.append(submit, button(l.close, 'text-button', close));
+    actions.append(button(l.back, 'compose-manual', () => showForm(false)), submit);
     form.append(label, input, actions);
-    form.addEventListener('submit', event => { event.preventDefault(); send('refine', {guidance: input.value.trim()}); });
-    input.addEventListener('keydown', event => {
-        if (event.key === 'Escape') close();
-        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); form.requestSubmit(); }
-    });
-    return form;
-}
+    root.append(toolbar, form);
 
+    function showForm(open, focus = true) {
+        form.hidden = !open;
+        toolbar.hidden = open;
+        refine.setAttribute('aria-expanded', String(open));
+        if (focus) (open ? input : refine).focus();
+    }
+    showForm(!!previous?.open, false);
+    form.addEventListener('submit', event => { event.preventDefault(); send('refine', {guidance: input.value.trim()}); });
+    form.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); showForm(false); }
+        if (event.target === input && (event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            event.preventDefault();
+            form.requestSubmit();
+        }
+    });
+    return {
+        root,
+        get state() { return {open: !form.hidden, text: input.value}; },
+        update(busy, drafts) {
+            const allLocked = drafts.every(d => d.locked);
+            if (allLocked && !form.hidden) showForm(false, false);
+            refine.title = allLocked ? l.allLocked : '';
+            refine.disabled = busy || allLocked;
+            apply.disabled = busy || drafts.some(d => !d.message.trim());
+        },
+    };
+}

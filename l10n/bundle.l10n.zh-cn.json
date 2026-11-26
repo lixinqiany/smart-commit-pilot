@@ -119,6 +119,7 @@
   "Smart Git Pilot: stage changes before generating a commit message.": "Smart Git Pilot：请先暂存更改，再生成提交信息。",
   "Smart Git Pilot: select a model first.": "Smart Git Pilot：请先选择模型。",
   "Using provider {0} and model {1}.": "使用服务提供商 {0} 和模型 {1}。",
+  "The model returned an empty commit message.": "模型返回了空的提交信息。",
   "Generating commit message…": "正在生成提交信息…",
   "Read staged changes ({0} characters).": "已读取暂存的更改（{0} 个字符）。",
   "Response parts received: {0}.": "收到 {0} 个响应片段。",

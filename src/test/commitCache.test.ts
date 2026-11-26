@@ -101,14 +101,17 @@ suite('Commit model calls', () => {
     });
     suiteTeardown(() => new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve())));
 
-    async function generate(model: string, provider = Venders.OpenAI) {
+    function commitGenerator(model: string, provider: Venders, onWrite?: (message: string) => void) {
         const log: string[] = [];
         const repo = { rootUri: vscode.Uri.file('/test'), inputBox: { value: '' } } as Repository;
         const git = {
             getRepository: () => repo,
             hasStagedChanges: () => true,
             getStagedDiff: async () => diff,
-            setCommitMessage: GitService.prototype.setCommitMessage,
+            setCommitMessage(message: string) {
+                GitService.prototype.setCommitMessage(message, repo);
+                onWrite?.(message);
+            },
         };
         const config = {
             getBaseURLandSecrets: async () => ({ provider, baseUrl, apiKey: 'test' }),
@@ -116,8 +119,13 @@ suite('Commit model calls', () => {
             getPrompt: () => 'Write a subject.',
             log: (line: string) => log.push(line),
         };
+        return { generator: new CommitGenerator(git, config), repo, log };
+    }
+
+    async function generate(model: string, provider = Venders.OpenAI) {
+        const { generator, repo, log } = commitGenerator(model, provider);
         requests.length = 0;
-        await new CommitGenerator(git, config).run();
+        await generator.run();
         assert.equal(repo.inputBox.value, subject, log.join('\n'));
         assert.equal(requests.length, 1);
         assert.equal(requests[0].body.model, model);
@@ -254,6 +262,39 @@ suite('Commit model calls', () => {
         } finally { await rm(root, { recursive: true, force: true }); }
     });
 
+    for (const provider of [Venders.OpenAI, Venders.Anthropic]) {
+        test(provider + ' streams into SCM, restores interrupted output and respects manual edits', async function () {
+            this.timeout(15000);
+            for (const outcome of ['success', 'interrupted', 'edited'] as const) {
+                let stream: ReturnType<typeof modelStream>;
+                let disconnect: () => void;
+                streamReply = res => {
+                    stream = modelStream(res, provider, 'model', { input_tokens: 4, output_tokens: 2 });
+                    disconnect = () => res.end();
+                    stream.write('fix:');
+                };
+                let firstWrite!: () => void;
+                const preview = new Promise<void>(resolve => { firstWrite = resolve; });
+                const { generator, repo } = commitGenerator('model', provider, message => {
+                    if (message === 'fix:') { firstWrite(); }
+                });
+                requests.length = 0;
+                repo.inputBox.value = 'original draft';
+                const run = generator.run();
+                await Promise.race([preview, run.then(() => assert.fail('run ended before a preview was written'))]);
+                assert.equal(repo.inputBox.value, 'fix:');
+                const duplicate = generator.run();
+                if (outcome === 'edited') { repo.inputBox.value = 'my own edit'; }
+                if (outcome === 'interrupted') { disconnect!(); }
+                else { stream!.write(' correct timeout'); stream!.finish(); }
+                await Promise.all([run, duplicate]);
+                const expected = { success: subject, interrupted: 'original draft', edited: 'my own edit' };
+                assert.equal(repo.inputBox.value, expected[outcome]);
+                assert.equal(requests.length, 1);
+            }
+        });
+
+    }
     test('Falls back once when a compatible endpoint explicitly rejects streaming', async () => {
         streamReply = res => {
             res.writeHead(400, { 'Content-Type': 'application/json' });

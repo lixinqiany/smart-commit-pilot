@@ -50,6 +50,7 @@ export interface Repository {
     readonly state: RepositoryState;
 
     addRemote(name: string, url: string): Promise<void>;
+    fetch(remote?: string, ref?: string): Promise<void>;
     diff(cached?: boolean): Promise<string>;
     getConfig(key: string): Promise<string>;
 }

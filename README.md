@@ -21,7 +21,7 @@ Open **Source Control → Smart Git Pilot**. The two icons beside the view title
 - Expand a local or remote branch to browse its commits. Expand a commit to see the files it changed, then select a file to compare that revision with its first parent. Select **Show more commits…** for older history.
 - Commit rows show the author’s avatar. Hover a commit to see its full message and dates. Next to the short hash, `+`, `~`, and `-` count added, modified, and deleted files. The following figures count lines added and deleted. Copy the full hash from the card or select the short hash to open the changes in VS Code versions with the built-in commit viewer.
 - Groups of up to five changed files show filenames with their directories beside them. Larger groups expand into folders. Each file’s badge shows its status in that commit.
-- Hover or right-click a branch to switch to it or create a branch from it. Switching to a remote branch reuses a local tracking branch or offers to create one.
+- Hover or right-click a branch for **Switch**, **Fetch** (cloud with a down arrow), and **Create From Here** (**+**). Switch is disabled on the current branch. Switching to a remote branch reuses a local tracking branch or offers to create one. Fetch updates the selected remote-tracking ref and leaves local commits and working files in place. On a local branch, Fetch uses its configured upstream and is disabled when there is no remote upstream.
 - In multi-repository workspaces the count row and its actions belong to the repository shown above it.
 
 ## Requirements

@@ -33,13 +33,12 @@ function avatarsEnabled(repo: Repository): boolean {
 
 function groupRemotes(repo: Repository, refs: BranchRef[]): RemoteGroup[] {
     const groups = new Map<string, BranchRef[]>();
-    const names = repo.state.remotes.map(remote => remote.name).sort((a, b) => b.length - a.length);
-    for (const name of names) {
+    for (const { name } of repo.state.remotes) {
         groups.set(name, []);
     }
     for (const ref of refs) {
         // A remote name may contain slashes. Keep cached refs visible even if their config disappeared.
-        const name = names.find(remote => ref.name.startsWith(remote + '/')) ?? ref.name.split('/')[0];
+        const name = ref.fetchRemote ?? ref.name.split('/')[0];
         const group = groups.get(name);
         if (group) {
             group.push(ref);
@@ -241,6 +240,9 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
         item.description = details.join('  •  ');
         item.tooltip = [branch.current ? t('Current branch: {0}', branch.name) : branch.name, item.description].join('\n');
         item.contextValue = branch.current ? 'pilotCurrentBranch' : 'pilotBranch';
+        if (branch.fetchRemote) {
+            item.contextValue += 'Fetchable';
+        }
         return item;
     }
 

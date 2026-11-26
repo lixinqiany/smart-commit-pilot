@@ -5,6 +5,7 @@
   "branches.create": "Create Branch…",
   "branches.refresh": "Refresh Branches",
   "branches.switchTo": "Switch to This Branch…",
+  "branches.fetch": "Fetch Branch",
   "branches.createFrom": "Create Branch From Here…",
   "branches.local": "Local Branches",
   "branches.localActive": "Local Branches (Selected)",

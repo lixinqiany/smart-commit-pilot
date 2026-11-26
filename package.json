@@ -86,13 +86,21 @@
         "command": "smart-commit-pilot.branches.switchTo",
         "title": "%branches.switchTo%",
         "category": "Smart Git Pilot",
-        "icon": "$(arrow-swap)"
+        "icon": "$(arrow-swap)",
+        "enablement": "viewItem =~ /^pilotBranch/"
+      },
+      {
+        "command": "smart-commit-pilot.branches.fetch",
+        "title": "%branches.fetch%",
+        "category": "Smart Git Pilot",
+        "icon": "$(cloud-download)",
+        "enablement": "viewItem =~ /Fetchable$/"
       },
       {
         "command": "smart-commit-pilot.branches.createFrom",
         "title": "%branches.createFrom%",
         "category": "Smart Git Pilot",
-        "icon": "$(git-branch)"
+        "icon": "$(add)"
       },
       {
         "command": "smart-commit-pilot.branches.local",
@@ -182,13 +190,18 @@
       "view/item/context": [
         {
           "command": "smart-commit-pilot.branches.switchTo",
-          "when": "view == smart-commit-pilot.branches && viewItem == pilotBranch",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(Current)?Branch(Fetchable)?$/",
           "group": "navigation@1"
         },
         {
-          "command": "smart-commit-pilot.branches.createFrom",
-          "when": "view == smart-commit-pilot.branches && (viewItem == pilotBranch || viewItem == pilotCurrentBranch)",
+          "command": "smart-commit-pilot.branches.fetch",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(Current)?Branch(Fetchable)?$/",
           "group": "navigation@2"
+        },
+        {
+          "command": "smart-commit-pilot.branches.createFrom",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(Current)?Branch(Fetchable)?$/",
+          "group": "navigation@3"
         },
         {
           "command": "smart-commit-pilot.branches.switch",
@@ -222,18 +235,27 @@
         },
         {
           "command": "smart-commit-pilot.branches.switchTo",
-          "when": "view == smart-commit-pilot.branches && viewItem == pilotBranch",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(Current)?Branch(Fetchable)?$/",
           "group": "inline@1"
         },
         {
-          "command": "smart-commit-pilot.branches.createFrom",
-          "when": "view == smart-commit-pilot.branches && (viewItem == pilotBranch || viewItem == pilotCurrentBranch)",
+          "command": "smart-commit-pilot.branches.fetch",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(Current)?Branch(Fetchable)?$/",
           "group": "inline@2"
+        },
+        {
+          "command": "smart-commit-pilot.branches.createFrom",
+          "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(Current)?Branch(Fetchable)?$/",
+          "group": "inline@3"
         }
       ],
       "commandPalette": [
         {
           "command": "smart-commit-pilot.branches.switchTo",
+          "when": "false"
+        },
+        {
+          "command": "smart-commit-pilot.branches.fetch",
           "when": "false"
         },
         {

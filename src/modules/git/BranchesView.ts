@@ -56,6 +56,11 @@ export class BranchesView implements vscode.Disposable {
             this.command('create', node => this.createBranch(node?.kind === 'local' ? node : undefined)),
             this.command('addRemote', node => this.addRemote(node?.repo)),
             this.command('switchTo', node => this.switchBranch(node)),
+            this.command('fetch', async node => {
+                if (node?.kind === 'branch') {
+                    await this.git.fetchBranch(node.repo, node.branch);
+                }
+            }),
             this.command('createFrom', node => this.createBranch(node)),
         ];
     }
@@ -141,6 +146,9 @@ export class BranchesView implements vscode.Disposable {
         }
         const { branch, repo } = node;
         const items = [{ label: t('Create branch from {0}…', branch.name), action: 'create' }];
+        if (branch.fetchRemote) {
+            items.unshift({ label: t('Fetch {0}', branch.name), action: 'fetch' });
+        }
         if (!branch.current) {
             let label = t('Switch to {0}', branch.name);
             if (branch.remote) {
@@ -160,6 +168,8 @@ export class BranchesView implements vscode.Disposable {
             await this.createBranch(node);
         } else if (pick?.action === 'switch') {
             await this.switchBranch(node);
+        } else if (pick?.action === 'fetch') {
+            await this.git.fetchBranch(repo, branch);
         }
     }
 
@@ -205,9 +215,7 @@ export class BranchesView implements vscode.Disposable {
         }
 
         // A remote name can itself contain a slash.
-        const remoteTarget = target.name;
-        const remote = repo.state.remotes.map(r => r.name).sort((a, b) => b.length - a.length)
-            .find(name => remoteTarget.startsWith(name + '/'));
+        const remote = target.fetchRemote;
         const suggested = target.name.slice((remote?.length ?? target.name.indexOf('/')) + 1);
         const name = await this.askName(target.name, branches, suggested);
         if (name) {

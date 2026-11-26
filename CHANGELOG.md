@@ -7,6 +7,8 @@ Group related changes under Unreleased during development and assign one version
 
 ## [Unreleased]
 
+- Show Switch, Fetch, and Create (+) on branch rows. Fetch retrieves updates for the selected branch's remote-tracking ref.
+
 ## [0.2.1] - 2026-11-26
 
 - Group changed files by folder in larger commits. Small groups show the filename and relative directory on one row.

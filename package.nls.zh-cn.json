@@ -5,6 +5,7 @@
   "branches.create": "创建分支…",
   "branches.refresh": "刷新分支",
   "branches.switchTo": "切换到此分支…",
+  "branches.fetch": "抓取分支更新（Fetch）",
   "branches.createFrom": "从此分支创建…",
   "branches.local": "本地分支",
   "branches.localActive": "本地分支（已选中）",

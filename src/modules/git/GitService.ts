@@ -12,6 +12,8 @@ export interface BranchRef {
     readonly remote: boolean;
     readonly current: boolean;
     readonly upstream: string;
+    readonly fetchRemote?: string;
+    readonly upstreamSource?: string;
     readonly date: Date;
 }
 
@@ -139,16 +141,21 @@ export class GitService {
         // Full refs distinguish namesakes, and Git forbids tabs and newlines in ref names.
         const output = await this.#runGit(repository.rootUri.fsPath, [
             'for-each-ref', '--sort=refname', '--sort=-HEAD',
-            '--format=%(refname)%09%(HEAD)%09%(upstream)%09%(committerdate:unix)%09%(symref)',
+            '--format=%(refname)%09%(HEAD)%09%(upstream)%09%(committerdate:unix)%09%(symref)%09%(upstream:remotename)%09%(upstream:remoteref)',
             'refs/heads', 'refs/remotes',
         ], '', undefined, 32 * 1024 * 1024);
         const branches: BranchRef[] = [];
+        const remotes = repository.state.remotes.map(r => r.name).filter(name => !name.startsWith('-'))
+            .sort((a, b) => b.length - a.length);
         for (const line of output.split(/\r?\n/)) {
-            const [ref, head, upstream, timestamp, symbolicTarget] = line.split('\t');
+            const [ref, head, upstream, timestamp, symbolicTarget, upstreamRemote, upstreamSource] = line.split('\t');
             if (ref && !symbolicTarget) {
+                const name = ref.replace(/^refs\/(heads|remotes)\//, '');
+                const remote = ref.startsWith('refs/remotes/');
+                const fetchRemote = remote ? remotes.find(r => name.startsWith(r + '/'))
+                    : remotes.find(r => r === upstreamRemote && upstreamSource);
                 branches.push({
-                    ref, name: ref.replace(/^refs\/(heads|remotes)\//, ''), current: head === '*',
-                    remote: ref.startsWith('refs/remotes/'), upstream,
+                    ref, name, current: head === '*', remote, upstream, fetchRemote, upstreamSource,
                     date: new Date(Number(timestamp) * 1000),
                 });
             }
@@ -158,6 +165,39 @@ export class GitService {
 
     async switchBranch(repository: Repository, name: string): Promise<void> {
         await this.#runGit(repository.rootUri.fsPath, ['switch', '--no-guess', '--', name]);
+    }
+
+    async fetchBranch(repo: Repository, branch: BranchRef): Promise<void> {
+        const remote = branch.fetchRemote;
+        if (!remote) {
+            throw new Error(vscode.l10n.t('Branch {0} has no remote to fetch from.', branch.name));
+        }
+        let source = branch.upstreamSource;
+        if (branch.remote) {
+            // Invert the configured fetch refspec: the displayed name can differ from the server's.
+            const specs = await this.#runGit(repo.rootUri.fsPath, ['config', '--get-all', 'remote.' + remote + '.fetch']);
+            for (const spec of specs.trim().split(/\r?\n/)) {
+                const [from, to] = spec.replace(/^\+/, '').split(':');
+                if (!to || !from.startsWith('refs/')) {
+                    continue;
+                }
+                if (to === branch.ref) {
+                    source = from;
+                    break;
+                }
+                const [prefix, suffix] = to.split('*');
+                if (suffix !== undefined && branch.ref.startsWith(prefix) && branch.ref.endsWith(suffix)
+                    && branch.ref.length >= prefix.length + suffix.length) {
+                    const match = branch.ref.slice(prefix.length, branch.ref.length - suffix.length);
+                    source = from.replace('*', () => match);
+                    break;
+                }
+            }
+        }
+        if (!source) {
+            throw new Error(vscode.l10n.t('No fetch mapping for {0} on {1}.', branch.name, remote));
+        }
+        await repo.fetch(remote, source);
     }
 
     async getBranchHistory(repo: Repository, ref: string, limit: number): Promise<HistoryCommit[]> {

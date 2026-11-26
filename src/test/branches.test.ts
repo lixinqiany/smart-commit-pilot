@@ -385,6 +385,42 @@ suite('Branch panel', function () {
         }
     });
 
+    test('Fetch on local and remote rows updates only the mapped tracking ref', async () => {
+        const remote = 'upstream/team';
+        const target = 'refs/remotes/' + remote + '/view/row';
+        const other = 'refs/remotes/' + remote + '/view/other';
+        const base = git('rev-parse', 'main');
+        const tip = git('commit-tree', 'main^{tree}', '-p', base, '-m', 'New remote tip');
+        const tree = new BranchTree(service, 'local', false);
+        await repo.addRemote(remote, dir);
+        try {
+            git('config', 'remote.' + remote + '.fetch', '+refs/heads/source/*:refs/remotes/' + remote + '/view/*');
+            git('update-ref', 'refs/heads/source/row', tip);
+            git('update-ref', 'refs/heads/source/other', tip);
+            git('update-ref', target, base);
+            git('update-ref', other, base);
+            git('switch', 'main');
+            git('branch', '--set-upstream-to=' + remote + '/view/row', 'main');
+            const branches = await service.getBranches(repo);
+            for (const ref of ['refs/heads/main', target]) {
+                const branch = branches.find(b => b.ref === ref)!;
+                const row = { kind: 'branch' as const, repo, branch, label: branch.name };
+                assert.equal(tree.getTreeItem(row).contextValue, branch.current ? 'pilotCurrentBranchFetchable' : 'pilotBranchFetchable');
+                git('update-ref', target, base);
+                await vscode.commands.executeCommand('smart-commit-pilot.branches.fetch', row);
+                assert.equal(git('rev-parse', target), tip);
+                assert.equal(git('rev-parse', other), base);
+                assert.equal(git('symbolic-ref', 'HEAD'), 'refs/heads/main');
+                assert.equal(git('rev-parse', 'HEAD'), base);
+            }
+            const untracked = branches.find(b => b.name === 'source/row')!;
+            assert.equal(tree.getTreeItem({ kind: 'branch', repo, branch: untracked, label: untracked.name }).contextValue, 'pilotBranch');
+        } finally {
+            tree.dispose();
+            git('remote', 'remove', remote);
+        }
+    });
+
     test('Create-only uses the selected base and a conflicting checkout preserves local edits', async () => {
         await service.switchBranch(repo, 'main');
         await service.createBranch(repo, 'new-base', 'refs/heads/main', 'switch');

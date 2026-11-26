@@ -13,8 +13,8 @@ const PROMPT_PREFIX =
 
 export class CommitGenerator {
     constructor(
-        private readonly gitService: GitService,
-        private readonly configurator: Configurator
+        private readonly gitService: Pick<GitService, 'getRepository' | 'hasStagedChanges' | 'getStagedDiff' | 'setCommitMessage'>,
+        private readonly configurator: Pick<Configurator, 'getBaseURLandSecrets' | 'getModel' | 'getPrompt' | 'log'>
     ) {}
 
     async run(rootUri?: vscode.Uri): Promise<void> {
@@ -56,6 +56,7 @@ export class CommitGenerator {
                     const adaptor = AdaptorFactory.create(venderInfo.provider as Venders, venderInfo.baseUrl, venderInfo.apiKey);
                     const response = await adaptor.createMessage({
                         model,
+                        avoidCacheWrites: true,
                         system: `${PROMPT_PREFIX}\n\n${this.configurator.getPrompt()}`,
                         max_output_tokens: MAX_OUTPUT_TOKENS,
                         messages: [{ role: MessageRole.USER, content: diff }],
@@ -65,6 +66,12 @@ export class CommitGenerator {
                         this.configurator.log(
                             t('Token usage: {0} input, {1} output.', response.usage.input_tokens, response.usage.output_tokens)
                         );
+                        const details = response.usage.input_tokens_details;
+                        if ('cache_write_tokens' in details) {
+                            this.configurator.log(t('Prompt cache tokens: {0} read, {1} written.',
+                                details.cached_tokens ?? t('not reported'),
+                                details.cache_write_tokens ?? t('not reported')));
+                        }
                     }
 
                     const message = response.content

@@ -119,6 +119,8 @@
   "Read staged changes ({0} characters).": "已讀取暫存的變更（{0} 個字元）。",
   "Response parts received: {0}.": "收到 {0} 個回應片段。",
   "Token usage: {0} input, {1} output.": "Token 用量：輸入 {0}，輸出 {1}。",
+  "Prompt cache tokens: {0} read, {1} written.": "提示詞快取 Token：讀取 {0}，寫入 {1}。",
+  "not reported": "未回報",
   "Writing the commit message ({0} characters).": "正在填入提交訊息（{0} 個字元）。",
   "Smart Git Pilot: could not generate a commit message. {0}": "Smart Git Pilot：產生提交訊息失敗。{0}"
 }

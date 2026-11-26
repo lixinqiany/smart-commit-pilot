@@ -11,6 +11,16 @@ import { Venders } from '../configuration/configuration.constants';
 import { MessageCreationRequest, MessageContentList, MessageRole } from './unified-protocols/request';
 import { MessageCreationResponse, Usage } from './unified-protocols/response';
 
+function supportsExplicitPromptCaching(model: string): boolean {
+    const version = /^(?:openai\/)?gpt-(\d+)(?:\.(\d+))?(?:-|$)/.exec(model);
+    if (!version) {
+        return false;
+    }
+    const major = Number(version[1]);
+    const minor = Number(version[2] ?? 0);
+    return major > 5 || (major === 5 && minor >= 6);
+}
+
 export class OpenAIAdaptor extends BaseAdaptor {
     readonly #client: OpenAI;
 
@@ -28,12 +38,17 @@ export class OpenAIAdaptor extends BaseAdaptor {
                     : item.content.map((part) => ({ type: 'input_text' as const, text: part.text })),
         }));
 
-        return {
+        const body: ResponseCreateParamsNonStreaming = {
             model: request.model,
             input,
             instructions: request.system,
             max_output_tokens: request.max_output_tokens,
         };
+        if (request.avoidCacheWrites && supportsExplicitPromptCaching(request.model)) {
+            // Explicit mode with no breakpoints keeps a one-off diff out of the prompt cache.
+            body.prompt_cache_options = { mode: 'explicit' };
+        }
+        return body;
     }
 
     protected async send(request: ResponseCreateParamsNonStreaming): Promise<OpenAIResponse> {
@@ -48,11 +63,12 @@ export class OpenAIAdaptor extends BaseAdaptor {
             usage = {
                 input_tokens: response.usage.input_tokens,
                 input_tokens_details: {
-                    cached_tokens: response.usage.input_tokens_details.cached_tokens,
+                    cached_tokens: response.usage.input_tokens_details?.cached_tokens ?? null,
+                    cache_write_tokens: response.usage.input_tokens_details?.cache_write_tokens ?? null,
                 },
                 output_tokens: response.usage.output_tokens,
                 output_tokens_details: {
-                    thinking_tokens: response.usage.output_tokens_details.reasoning_tokens,
+                    thinking_tokens: response.usage.output_tokens_details?.reasoning_tokens ?? null,
                 },
             };
         }

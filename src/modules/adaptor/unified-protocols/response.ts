@@ -1,7 +1,8 @@
 import type { MessageRole, MessageContentList } from "./request";
 
 export interface OpenAICacheDetails {
-    cached_tokens: number;
+    cached_tokens: number | null;
+    cache_write_tokens: number | null;
 }
 
 interface AnthropicCacheCreationDetails {
@@ -20,7 +21,7 @@ export interface Usage {
     input_tokens_details: OpenAICacheDetails | AnthropicCacheDetails;
     output_tokens: number;
     output_tokens_details: {
-      thinking_tokens: number;
+      thinking_tokens: number | null;
     }
 }
 

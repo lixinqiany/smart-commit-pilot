@@ -25,6 +25,7 @@ export type MessageInput = Array<MessageInputItem>
 export interface MessageCreationRequest {
     model: string;
     messages: MessageInput;
+    avoidCacheWrites?: boolean;
     /* @description system prompt */
     system?: string;
     /* 

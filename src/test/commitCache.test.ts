@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, ServerResponse } from 'node:http';
+import type { DraftProgress } from '../modules/composer/draftPreview';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -17,12 +18,56 @@ import { CommitGenerator } from '../modules/git/CommitGenerator';
 import { GitService } from '../modules/git/GitService';
 import { Repository } from '../modules/git/typings/git';
 
-suite('Commit message prompt caching', () => {
+function modelStream(res: ServerResponse, provider: Venders, model: string,
+    usage: { input_tokens: number; output_tokens: number }, reasoning = false) {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' });
+    res.setTimeout(5000, () => res.destroy());
+    const send = (type: string, fields: object) => {
+        res.write('event: ' + type + '\ndata: ' + JSON.stringify({ type, ...fields }) + '\n\n');
+    };
+    const textIndex = reasoning ? 1 : 0;
+    if (provider === Venders.Anthropic) {
+        send('message_start', { message: { id: 'msg', role: 'assistant', model, content: [], usage } });
+        if (reasoning) {
+            send('content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } });
+            send('content_block_delta', { index: 0, delta: { type: 'thinking_delta', thinking: 'placeholder' } });
+            send('content_block_stop', { index: 0 });
+        }
+        send('content_block_start', { index: textIndex, content_block: { type: 'text', text: '' } });
+    } else if (reasoning) {
+        send('response.output_item.added', { item: { type: 'reasoning', summary: [] } });
+        send('response.reasoning_text.delta', { delta: 'placeholder' });
+    }
+    let text = '';
+    return {
+        write(delta: string) {
+            text += delta;
+            if (provider === Venders.OpenAI) { send('response.output_text.delta', { delta }); }
+            else { send('content_block_delta', { index: textIndex, delta: { type: 'text_delta', text: delta } }); }
+        },
+        finish() {
+            if (provider === Venders.OpenAI) {
+                send('response.completed', { response: { model, usage, output: [
+                    { type: 'message', content: [{ type: 'output_text', text }] },
+                ] } });
+            } else {
+                send('content_block_stop', { index: textIndex });
+                send('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: usage.output_tokens } });
+                send('message_stop', {});
+            }
+            res.end();
+        },
+    };
+}
+
+suite('Commit model calls', () => {
     const diff = 'diff --git a/settings.ts b/settings.ts\n-old\n+new';
     const subject = 'fix: correct timeout';
     let baseUrl: string;
     let replies: string[] = [];
-    teardown(() => { replies = []; });
+    let streamReply: ((res: ServerResponse) => void) | undefined;
+    let bufferedGateway = false;
+    teardown(() => { replies = []; streamReply = undefined; bufferedGateway = false; });
     let inputDetails: { cached_tokens: number; cache_write_tokens?: number } | undefined;
     const requests: { path?: string; body: Record<string, unknown> }[] = [];
     const server = createServer(async (req, res) => {
@@ -32,8 +77,16 @@ suite('Commit message prompt caching', () => {
         }
         const body = JSON.parse(raw);
         requests.push({ path: req.url, body });
+        if (body.stream && streamReply) { streamReply(res); return; }
         const reply = replies.shift() ?? subject;
         const usage = { input_tokens: 2728, output_tokens: 17, input_tokens_details: inputDetails };
+        if (body.stream && !bufferedGateway) {
+            const provider = req.url === '/v1/messages' ? Venders.Anthropic : Venders.OpenAI;
+            const stream = modelStream(res, provider, body.model, usage);
+            stream.write(reply);
+            stream.finish();
+            return;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
         res.end(JSON.stringify(req.url === '/v1/messages'
             ? { model: body.model, content: [{ type: 'text', text: reply }], usage }
@@ -162,7 +215,11 @@ suite('Commit message prompt caching', () => {
             await writeFile(join(root, 'caller.ts'), "export { shared } from './shared';");
             await writeFile(join(root, 'shared.ts'), 'export const shared = 1;');
             requests.length = 0;
-            replies = [JSON.stringify({ concerns: [{ purpose: 'Extract helper', paths: ['shared.ts'], dependsOn: [] }] }),
+            replies = [JSON.stringify({ drafts: [
+                { purpose: 'Use helper', anchorEdit: 1, paths: ['caller.ts'], dependsOn: ['Extract helper'] },
+                { purpose: 'Extract helper', anchorEdit: 2, paths: ['shared.ts'], dependsOn: [] },
+                { purpose: 'Document setup', anchorEdit: 3, paths: ['z.md'], dependsOn: [] },
+            ] }),
                 groups(['caller', 1], ['helper', 2], ['docs', 3]), JSON.stringify({ order: [1, 2, 3] })];
             const deep = await composition.start('working', 'Keep docs separate', false, signal);
             assert.ok(deep);
@@ -195,6 +252,20 @@ suite('Commit message prompt caching', () => {
             assert.deepEqual(await git.headState(), before);
             assert.equal(await git.text(['diff', '--cached']), '');
         } finally { await rm(root, { recursive: true, force: true }); }
+    });
+
+    test('Falls back once when a compatible endpoint explicitly rejects streaming', async () => {
+        streamReply = res => {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Parameter stream is not supported' } }));
+        };
+        const adaptor = new OpenAIAdaptor(baseUrl, 'test', Venders.OpenAI);
+        requests.length = 0;
+        const response = await adaptor.createMessage({ model: 'gpt-6.1-sol', avoidCacheWrites: true,
+            messages: [{ role: MessageRole.USER, content: diff }], max_output_tokens: 32 });
+        assert.equal(response.content[0].text, subject);
+        assert.deepEqual(requests.map(r => r.body.stream), [true, undefined]);
+        assert.deepEqual(requests[0].body.prompt_cache_options, requests[1].body.prompt_cache_options);
     });
 
     test('Preserves default caching for calls that do not request one-off behavior', async () => {

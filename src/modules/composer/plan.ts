@@ -11,32 +11,45 @@ export interface DraftFile extends FileSelection { path: string; patch: string }
 export interface Draft extends Group { tree: string; files: DraftFile[]; check?: DraftCheck }
 export interface Plan { snapshot: Snapshot; source: ChangedFile[]; drafts: Draft[]; session?: PlanningSession; warning?: string }
 
-export function parseGroups(raw: string, files: ChangedFile[]): Group[] {
-    const error = () => new Error(l10n.t('The model returned an incomplete or overlapping split. Generate a new plan.'));
+function invalidSplit() {
+    return new Error(l10n.t('The model returned an incomplete or overlapping split. Generate a new plan.'));
+}
+
+export function groupReader(files: ChangedFile[], anchors?: ReadonlySet<number>) {
     const allowed = new Set(files.flatMap(file => file.edits.map(edit => edit.id)));
-    let data;
-    try { data = JSON.parse(raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1')); }
-    catch { throw error(); }
-    if (!Array.isArray(data?.commits) || !data.commits.length) { throw error(); }
     const seen = new Set<number>();
-    const groups = data.commits.map((item: { message?: unknown; edits?: unknown } | null) => {
-        if (typeof item?.message !== 'string' || !item.message.trim() || item.message.includes('\0') ||
-            !Array.isArray(item.edits) || !item.edits.length) { throw error(); }
+    function read(item: unknown): Group {
+        if (!item || typeof item !== 'object' || !('edits' in item) || !('message' in item) ||
+            typeof item.message !== 'string' || !item.message.trim() || item.message.includes('\0') ||
+            !Array.isArray(item.edits) || !item.edits.length) { throw invalidSplit(); }
         const edits: number[] = [];
         for (const span of item.edits) {
             const range = typeof span === 'string' && /^(\d+)-(\d+)$/.exec(span);
             const start = range ? Number(range[1]) : span;
             const end = range ? Number(range[2]) : span;
-            if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end - start >= allowed.size || start > end) { throw error(); }
+            if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end - start >= allowed.size || start > end) { throw invalidSplit(); }
             for (let id = start; id <= end; id++) {
-                if (!allowed.has(id) || seen.has(id)) { throw error(); }
+                if (!allowed.has(id) || seen.has(id)) { throw invalidSplit(); }
                 seen.add(id);
                 edits.push(id);
             }
         }
+        if (anchors && edits.filter(id => anchors.has(id)).length !== 1) {
+            throw new Error(l10n.t('Each draft must include exactly one of these planned edits: {0}.', [...anchors].join(', ')));
+        }
         return { message: item.message.trim(), edits };
-    });
-    if (seen.size !== allowed.size) { throw error(); }
+    }
+    return { read, complete: () => seen.size === allowed.size };
+}
+
+export function parseGroups(raw: string, files: ChangedFile[], anchors?: ReadonlySet<number>): Group[] {
+    let data;
+    try { data = JSON.parse(raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1')); }
+    catch { throw invalidSplit(); }
+    if (!Array.isArray(data?.commits) || !data.commits.length) { throw invalidSplit(); }
+    const reader = groupReader(files, anchors);
+    const groups = data.commits.map(reader.read);
+    if (!reader.complete()) { throw invalidSplit(); }
     return groups;
 }
 

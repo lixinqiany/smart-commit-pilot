@@ -572,6 +572,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
+    "@streamparser/json": "^0.0.26",
     "openai": "^6.49.0"
   },
   "l10n": "./l10n"

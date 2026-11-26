@@ -77,7 +77,7 @@ export class Composition {
             const { model, ask } = connection;
             const ctx = { model, convention: this.config.getPrompt(), files: plan.source, guidance, previous: plan.drafts };
             const session = plan.session ?? { deep: chooseDepth(plan.source, 'auto'), instructions: [] };
-            const result = await planGroups(ctx, session, ask, report, true, intermediateErrors(plan));
+            const result = await planGroups(ctx, session, ask, report, { mode: 'refine', feedback: intermediateErrors(plan) });
             const revised = await buildPlan(this.git, plan.snapshot, plan.source, result.groups);
             return this.review(revised, result.session, ctx, ask, new SequenceValidator(this.git, signal), report);
         });
@@ -99,7 +99,7 @@ export class Composition {
         }
         if (errors.length && session.deep) {
             try {
-                const repaired = await planGroups({ ...ctx, previous: reviewed.drafts, guidance: '' }, session, ask, report, true, errors);
+                const repaired = await planGroups({ ...ctx, previous: reviewed.drafts, guidance: '' }, session, ask, report, { mode: 'repair', feedback: errors });
                 const candidate = await verify(repaired.groups);
                 if (!candidate.drafts.some(d => d.check?.skipped) && intermediateErrors(candidate).length < errors.length) { reviewed = candidate; }
             } catch (err) {
@@ -156,9 +156,9 @@ export class Composition {
         const model = this.model || await this.selectModel();
         if (!model || signal.aborted) { return; }
         const adaptor = AdaptorFactory.create(vendor.provider as Venders, vendor.baseUrl, vendor.apiKey);
-        const ask: Ask = async body => {
+        const ask: Ask = async (body, onText, onProgress) => {
             signal.throwIfAborted();
-            const response = await adaptor.createMessage(body, signal);
+            const response = await adaptor.createMessage(body, signal, onText, onProgress);
             logTokenUsage(response.usage, line => this.config.log(line));
             signal.throwIfAborted();
             return response.content.map(part => part.text).join('\n');

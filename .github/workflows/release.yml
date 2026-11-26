@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: ${{ !github.event.deleted }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      release: true
+
+  publish:
+    name: Publish to ${{ matrix.marketplace }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        marketplace: [Visual Studio Marketplace, Open VSX]
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: vsix
+          path: vsix
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Publish to Visual Studio Marketplace
+        if: matrix.marketplace == 'Visual Studio Marketplace'
+        run: npm exec --yes --package=@vscode/vsce@4.1.1 -- vsce publish --oidc --packagePath vsix/*.vsix
+
+      - name: Publish to Open VSX
+        if: matrix.marketplace == 'Open VSX'
+        run: npm exec --yes --package=ovsx@1.4.0 -- ovsx publish vsix/*.vsix --trusted-publishing

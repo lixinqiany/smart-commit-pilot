@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Optional branch or tag to package (defaults to the selected ref)
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Verify release tag
+        if: inputs.release
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF" != "refs/tags/v$version" ]]; then
+            echo "::error::Expected tag v$version for this package, got $GITHUB_REF"
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run compile-tests
+      - run: pnpm run compile
+      - name: Run VS Code integration tests
+        run: xvfb-run -a pnpm exec vscode-test --fail-zero
+
+      - name: Package extension
+        if: github.event_name == 'workflow_dispatch' || inputs.release
+        run: |
+          mkdir -p "$RUNNER_TEMP/vsix"
+          npm exec --yes --package=@vscode/vsce@4.1.1 -- vsce package --no-dependencies --out "$RUNNER_TEMP/vsix"
+
+      - name: Upload VSIX
+        if: github.event_name == 'workflow_dispatch' || inputs.release
+        uses: actions/upload-artifact@v6
+        with:
+          name: vsix
+          path: ${{ runner.temp }}/vsix/*.vsix
+          if-no-files-found: error
+          overwrite: true

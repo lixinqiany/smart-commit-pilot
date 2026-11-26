@@ -1,5 +1,5 @@
 {
-  "extension.description": "Manage Git branches, inspect current-line history, and generate AI-powered commit messages in VS Code.",
+  "extension.description": "Browse Git branches and history, see line blame, and manage stashes in VS Code. Use your own AI model to draft messages and split changes into commits.",
   "commands.setup": "Setup Provider",
   "menus.stash": "Stash Changes",
   "commands.generateCommitMessage": "Generate Commit Message",

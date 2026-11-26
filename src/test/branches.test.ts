@@ -462,16 +462,19 @@ suite('Branch panel', function () {
         const serverRef = 'refs/heads/release/server-name';
         const trackingRef = 'refs/remotes/' + remote + '/mapped/server-name';
         const base = git('rev-parse', 'main');
-        const tip = git('commit-tree', 'main^{tree}', '-p', base, '-m', 'Remote only');
+        const tree = git('rev-parse', 'main^{tree}');
         git('init', '-q', '--bare', bare);
         await repo.addRemote(remote, bare);
         git('config', 'remote.' + remote + '.fetch', '+refs/heads/release/*:refs/remotes/' + remote + '/mapped/*');
         const track = () => git('branch', '--track', localName, remote + '/mapped/server-name');
         const readRemote = () => git('--git-dir=' + bare, 'for-each-ref', '--format=%(objectname)', serverRef);
+        // Make changes on the server without letting a client push update its tracking ref.
+        const deleteOnServer = () => git('--git-dir=' + bare, 'update-ref', '-d', serverRef);
         const events: { step: string; status: string; reason?: string }[] = [];
         const report = (step: string, detail: { status: string; reason?: string }) => events.push({ step, ...detail });
         try {
             git('push', '-q', remote, base + ':' + serverRef, base + ':' + localRef);
+            const tip = git('--git-dir=' + bare, 'commit-tree', tree, '-p', base, '-m', 'Remote only');
             track();
             const plan = await service.getBranchDeletion(repo, localRef);
             assert.deepEqual(plan.targets, [{ remote, ref: serverRef, tip: base }]);
@@ -496,7 +499,8 @@ suite('Branch panel', function () {
             git('push', '-q', remote, base + ':' + serverRef);
             track();
             const deletedElsewhere = await service.getBranchDeletion(repo, localRef);
-            git('push', '-q', bare, ':' + serverRef);
+            deleteOnServer();
+            assert.equal(readRemote(), '');
             assert.equal(git('rev-parse', trackingRef), base);
             await service.deleteLocalBranch(repo, deletedElsewhere, { target: deletedElsewhere.targets[0], force: false }, report);
             assert.deepEqual(events.splice(0), [
@@ -507,7 +511,8 @@ suite('Branch panel', function () {
             git('push', '-q', remote, base + ':' + serverRef);
             track();
             const stale = await service.getBranchDeletion(repo, localRef);
-            git('push', '-q', bare, tip + ':' + serverRef);
+            git('--git-dir=' + bare, 'update-ref', serverRef, tip, base);
+            assert.equal(git('rev-parse', trackingRef), base);
             await assert.rejects(service.deleteLocalBranch(repo, stale, { target: stale.targets[0], force: true }, report));
             assert.deepEqual(events.splice(0), [{ step: 'delete_remote_branch', status: 'failed' }]);
             assert.equal(readRemote(), tip);
@@ -526,7 +531,7 @@ suite('Branch panel', function () {
             git('push', '-q', remote, tip + ':' + serverRef);
             git('branch', '--track', localName, remote + '/mapped/server-name');
             const unmergedWithStaleUpstream = await service.getBranchDeletion(repo, localRef);
-            git('push', '-q', bare, ':' + serverRef);
+            deleteOnServer();
             const staleTarget = unmergedWithStaleUpstream.targets[0];
             await assert.rejects(service.deleteLocalBranch(repo, unmergedWithStaleUpstream, { target: staleTarget, force: false }, report),
                 { message: vscode.l10n.t('The remote branch is already gone. Local branch {0} has commits outside the current branch. Select force deletion to delete it.', localName) });
@@ -544,7 +549,7 @@ suite('Branch panel', function () {
             track();
             git('branch', '-f', localName, base);
             const mergedLocal = await service.getBranchDeletion(repo, localRef);
-            git('push', '-q', bare, ':' + serverRef);
+            deleteOnServer();
             await service.deleteLocalBranch(repo, mergedLocal, { target: mergedLocal.targets[0], force: false }, report);
             assert.deepEqual(events.splice(0), [
                 { step: 'delete_remote_branch', status: 'already_absent' }, { step: 'delete_local_branch', status: 'deleted' },

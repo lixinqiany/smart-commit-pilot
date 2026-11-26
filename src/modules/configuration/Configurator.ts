@@ -6,6 +6,8 @@ import { PromptFileSystemProvider } from './PromptFileSystemProvider';
 const API_KEY_SECRET = 'smartCommitPilot.apiKey';
 const t = vscode.l10n.t;
 
+type ModelSetting = 'model' | 'composer.model';
+
 export class Configurator {
 	private readonly output: vscode.OutputChannel;
 
@@ -63,9 +65,9 @@ export class Configurator {
 		await config.update('prompt', prompt.trim(), vscode.ConfigurationTarget.Global);
 	}
 
-	getModel(): string {
+	getModel(setting: ModelSetting = 'model'): string {
 		const config = vscode.workspace.getConfiguration('smartCommitPilot');
-		return config.get<string>('model', '');
+		return config.get<string>(setting, '').trim();
 	}
 
 	isLineBlameEnabled(): boolean {
@@ -83,7 +85,7 @@ export class Configurator {
 		await config.update('blame.enabled', !this.isLineBlameEnabled(), vscode.ConfigurationTarget.Workspace);
 	}
 
-	async setupModel(): Promise<void> {
+	async setupModel(setting: ModelSetting = 'model'): Promise<string | undefined> {
 		const venderInfo = await this.getBaseURLandSecrets();
 		if (!venderInfo) {
 			vscode.window.showErrorMessage(t('Smart Git Pilot: configure a provider first.'));
@@ -111,13 +113,17 @@ export class Configurator {
 			return;
 		}
 
-		const model = await vscode.window.showQuickPick(models, { placeHolder: t('Select a model') });
+		const title = setting === 'composer.model' ? t('Select a model for split commits') : t('Select a model for commit messages');
+		const model = await vscode.window.showQuickPick(models, { title, placeHolder: t('Select a model') });
 		if (!model) {
 			return;
 		}
 
 		const config = vscode.workspace.getConfiguration('smartCommitPilot');
-		await config.update('model', model, vscode.ConfigurationTarget.Global);
+		const target = config.inspect<string>(setting)?.workspaceValue === undefined
+			? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.Workspace;
+		await config.update(setting, model, target);
+		return model;
 	}
 
 	private async captureVenderInfo(): Promise<{ provider: string; baseUrl: string; apiKey: string } | undefined> {

@@ -6,6 +6,7 @@ export enum MessageRole {
 export interface TextContent {
     type: "text";
     text: string;
+    cacheBreakpoint?: boolean;
 }
 
 export type MessageContent = TextContent;
@@ -25,6 +26,7 @@ export type MessageInput = Array<MessageInputItem>
 export interface MessageCreationRequest {
     model: string;
     messages: MessageInput;
+    avoidCacheWrites?: boolean;
     /* @description system prompt */
     system?: string;
     /* 

@@ -1,20 +1,17 @@
 import * as vscode from 'vscode';
 import { GitService } from './GitService';
 import { Configurator } from '../configuration/Configurator';
+import { logTokenUsage } from '../adaptor/logTokenUsage';
 import { AdaptorFactory } from '../adaptor/AdaptorFactory';
 import { Venders } from '../configuration/configuration.constants';
-import { MessageRole } from '../adaptor/unified-protocols/request';
+import { messageRequest } from './messageRequest';
 
-const MAX_OUTPUT_TOKENS = 1024;
 const t = vscode.l10n.t;
-
-const PROMPT_PREFIX =
-    'You are a commit message generator. Given a git diff of staged changes, write a single commit message following the Conventional Commits specification, validated against @commitlint/config-conventional rules.';
 
 export class CommitGenerator {
     constructor(
-        private readonly gitService: GitService,
-        private readonly configurator: Configurator
+        private readonly gitService: Pick<GitService, 'getRepository' | 'hasStagedChanges' | 'getStagedDiff' | 'setCommitMessage'>,
+        private readonly configurator: Pick<Configurator, 'getBaseURLandSecrets' | 'getModel' | 'getPrompt' | 'log'>
     ) {}
 
     async run(rootUri?: vscode.Uri): Promise<void> {
@@ -54,18 +51,9 @@ export class CommitGenerator {
                     this.configurator.log(t('Read staged changes ({0} characters).', diff.length));
 
                     const adaptor = AdaptorFactory.create(venderInfo.provider as Venders, venderInfo.baseUrl, venderInfo.apiKey);
-                    const response = await adaptor.createMessage({
-                        model,
-                        system: `${PROMPT_PREFIX}\n\n${this.configurator.getPrompt()}`,
-                        max_output_tokens: MAX_OUTPUT_TOKENS,
-                        messages: [{ role: MessageRole.USER, content: diff }],
-                    });
+                    const response = await adaptor.createMessage(messageRequest(model, diff, this.configurator.getPrompt()));
                     this.configurator.log(t('Response parts received: {0}.', response.content.length));
-                    if (response.usage) {
-                        this.configurator.log(
-                            t('Token usage: {0} input, {1} output.', response.usage.input_tokens, response.usage.output_tokens)
-                        );
-                    }
+                    logTokenUsage(response.usage, line => this.configurator.log(line));
 
                     const message = response.content
                         .filter((part): part is { type: 'text'; text: string } => part.type === 'text')

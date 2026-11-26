@@ -8,6 +8,7 @@ import { Venders } from './modules/configuration/configuration.constants';
 import { OpenAIAdaptor } from './modules/adaptor/OpenAIAdaptor';
 import { AnthropicAdaptor } from './modules/adaptor/AnthropicAdaptor';
 import { BranchesView } from './modules/git/BranchesView';
+import { Composer } from './modules/composer/Composer';
 import { GitService } from './modules/git/GitService';
 import { CommitGenerator } from './modules/git/CommitGenerator';
 import { BlameRunner, COPY_BLAME_HASH_COMMAND } from './modules/git/BlameRunner';
@@ -26,11 +27,14 @@ export function activate(context: vscode.ExtensionContext) {
 	const configurator = new Configurator(context);
 	const gitService = new GitService();
 	const commitGenerator = new CommitGenerator(gitService, configurator);
+	const composer = new Composer(context.extension, gitService, configurator);
 	const blameRunner = new BlameRunner(gitService, configurator);
 	blameRunner.start();
 
 	context.subscriptions.push(
 		blameRunner,
+		composer,
+		vscode.commands.registerCommand('smart-commit-pilot.composeCommits', (scm?: vscode.SourceControl) => composer.run(scm?.rootUri)),
 		new BranchesView(gitService, context.workspaceState),
 		vscode.workspace.registerFileSystemProvider(
 			PromptFileSystemProvider.scheme,

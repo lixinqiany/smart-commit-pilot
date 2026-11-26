@@ -1,12 +1,14 @@
 {
-  "extension.description": "在 VS Code 中管理 Git 分支、檢視目前行的提交歷史，並透過 AI 產生提交訊息。",
+  "extension.description": "在 VS Code 中瀏覽分支與提交歷史、查看目前這一行的修改者、儲藏與還原變更。用自己的 AI 模型產生提交訊息，依目的拆分變更並逐筆檢視。",
   "commands.setup": "設定服務提供者",
+  "menus.stash": "儲藏變更 (Stash)",
   "commands.generateCommitMessage": "產生提交訊息",
   "commands.configurePrompt": "設定提示詞",
-  "commands.selectModel": "選擇模型",
+  "commands.selectModel": "選擇提交訊息模型",
   "commands.toggleLineBlame": "切換目前行的提交註解",
-  "settings.provider": "用於產生提交訊息的 AI 服務提供者。",
+  "settings.provider": "產生提交訊息與拆分提交共用的 AI 服務提供者。",
   "settings.baseUrl": "所選服務提供者的基底 URL。",
+  "settings.composer.model": "用於拆分提交與調整草稿的模型。",
   "settings.model": "用於產生提交訊息的模型。",
   "settings.prompt": "產生提交訊息時使用的自訂提示詞。",
   "settings.blame.enabled": "在編輯器中顯示目前行的提交訊息。",
@@ -34,5 +36,6 @@
   "branches.contributors": "貢獻者",
   "branches.contributorsActive": "貢獻者（已選取）",
   "branches.allContributors": "顯示所有分支的貢獻者",
-  "branches.currentContributors": "僅顯示目前分支的貢獻者"
+  "branches.currentContributors": "僅顯示目前分支的貢獻者",
+  "commands.composeCommits": "將變更拆分為多個提交…"
 }

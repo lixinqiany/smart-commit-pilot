@@ -19,7 +19,8 @@ export class AnthropicAdaptor extends BaseAdaptor {
             content:
                 typeof item.content === 'string'
                     ? item.content
-                    : item.content.map((part) => ({ type: 'text' as const, text: part.text })),
+                    : item.content.map((part) => ({ type: 'text' as const, text: part.text,
+                        ...(part.cacheBreakpoint ? { cache_control: { type: 'ephemeral' as const } } : {}) })),
         }));
 
         return {
@@ -30,8 +31,8 @@ export class AnthropicAdaptor extends BaseAdaptor {
         };
     }
 
-    protected async send(request: MessageCreateParamsNonStreaming): Promise<Message> {
-        return this.#client.messages.create(request);
+    protected async send(request: MessageCreateParamsNonStreaming, signal?: AbortSignal): Promise<Message> {
+        return this.#client.messages.create(request, { signal });
     }
 
     protected toUnifiedResponse(response: Message): MessageCreationResponse {

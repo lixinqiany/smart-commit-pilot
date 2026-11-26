@@ -1,12 +1,14 @@
 {
-  "extension.description": "Manage Git branches, inspect current-line history, and generate AI-powered commit messages in VS Code.",
+  "extension.description": "Browse Git branches and history, see line blame, and manage stashes in VS Code. Use your own AI model to draft messages and split changes into commits.",
   "commands.setup": "Setup Provider",
+  "menus.stash": "Stash Changes",
   "commands.generateCommitMessage": "Generate Commit Message",
   "commands.configurePrompt": "Setup Prompt",
-  "commands.selectModel": "Select Model",
+  "commands.selectModel": "Select Commit Message Model",
   "commands.toggleLineBlame": "Toggle Current Line Blame",
-  "settings.provider": "AI provider used to generate commit messages.",
+  "settings.provider": "AI provider for commit messages and split commits.",
   "settings.baseUrl": "Base URL of the selected provider.",
+  "settings.composer.model": "Model used to split changes into commit drafts and refine them.",
   "settings.model": "Model used to generate commit messages.",
   "settings.prompt": "Custom instructions for generating commit messages.",
   "settings.blame.enabled": "Show commit information for the current line in the editor.",
@@ -34,5 +36,6 @@
   "branches.contributors": "Contributors",
   "branches.contributorsActive": "Contributors (Selected)",
   "branches.allContributors": "Show Contributors from All Branches",
-  "branches.currentContributors": "Show Contributors from Current Branch"
+  "branches.currentContributors": "Show Contributors from Current Branch",
+  "commands.composeCommits": "Split Changes into Commits…"
 }

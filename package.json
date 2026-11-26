@@ -2,7 +2,7 @@
   "name": "smart-commit-pilot",
   "displayName": "Smart Git Pilot",
   "description": "%extension.description%",
-  "version": "0.2.2",
+  "version": "0.3.1",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -48,6 +48,12 @@
           "light": "images/scm-icon-light.svg",
           "dark": "images/scm-icon-dark.svg"
         }
+      },
+      {
+        "command": "smart-commit-pilot.composeCommits",
+        "title": "%commands.composeCommits%",
+        "category": "Smart Git Pilot",
+        "icon": "$(split-horizontal)"
       },
       {
         "command": "smart-commit-pilot.configurePrompt",
@@ -211,12 +217,59 @@
         "icon": "$(target)"
       }
     ],
+    "submenus": [
+      {
+        "id": "smart-commit-pilot.stash",
+        "label": "%menus.stash%",
+        "icon": {
+          "light": "images/stash-light.svg",
+          "dark": "images/stash-dark.svg"
+        }
+      }
+    ],
     "menus": {
       "scm/title": [
         {
           "command": "smart-commit-pilot.generateCommitMessage",
           "when": "scmProvider == git",
-          "group": "navigation"
+          "group": "navigation@10"
+        },
+        {
+          "command": "smart-commit-pilot.composeCommits",
+          "when": "scmProvider == git",
+          "group": "navigation@11"
+        },
+        {
+          "submenu": "smart-commit-pilot.stash",
+          "when": "scmProvider == git",
+          "group": "navigation@12"
+        }
+      ],
+      "smart-commit-pilot.stash": [
+        {
+          "command": "git.stash",
+          "group": "1_save@1"
+        },
+        {
+          "command": "git.stashIncludeUntracked",
+          "group": "1_save@2"
+        },
+        {
+          "command": "git.stashStaged",
+          "when": "gitVersion2.35",
+          "group": "1_save@3"
+        },
+        {
+          "command": "git.stashApply",
+          "group": "2_restore@1"
+        },
+        {
+          "command": "git.stashPop",
+          "group": "2_restore@2"
+        },
+        {
+          "command": "git.stashDrop",
+          "group": "3_remove@1"
         }
       ],
       "view/title": [
@@ -416,6 +469,11 @@
           "default": "",
           "description": "%settings.prompt%"
         },
+        "smartCommitPilot.composer.model": {
+          "type": "string",
+          "default": "",
+          "description": "%settings.composer.model%"
+        },
         "smartCommitPilot.model": {
           "type": "string",
           "default": "",
@@ -470,7 +528,15 @@
           "fontCharacter": "\\E001"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "smart-commit-pilot.composeCommits",
+        "key": "ctrl+k ctrl+shift+g",
+        "mac": "cmd+k cmd+shift+g",
+        "when": "gitOpenRepositoryCount > 0"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
@@ -506,7 +572,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
-    "openai": "^6.45.0"
+    "openai": "^6.49.0"
   },
   "l10n": "./l10n"
 }

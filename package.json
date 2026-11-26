@@ -2,7 +2,7 @@
   "name": "smart-commit-pilot",
   "displayName": "Smart Git Pilot",
   "description": "Manage Git branches, inspect current-line history, and generate AI-powered commit messages in VS Code.",
-  "version": "0.2.7",
+  "version": "0.2.1",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -293,7 +293,7 @@
         "smartCommitPilot.blame.avatars": {
           "type": "boolean",
           "default": true,
-          "description": "Show Gravatar or generated cartoon avatars in current-line blame hovers."
+          "description": "Show author avatars from GitHub or Gravatar in branch history and blame hovers. Missing Gravatars use RoboHash artwork."
         }
       }
     },

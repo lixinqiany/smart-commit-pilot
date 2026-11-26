@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { BranchTree } from '../modules/git/BranchTree';
+import { authorAvatar } from '../modules/git/authorAvatar';
+import { commitHover } from '../modules/git/commitHover';
+import { commitFileDecorations, commitFileRows } from '../modules/git/CommitFiles';
 import { GitService } from '../modules/git/GitService';
 import { Repository } from '../modules/git/typings/git';
 
@@ -66,7 +69,8 @@ suite('Branch panel', function () {
             for (const node of branches) {
                 assert.equal(node.kind, 'branch');
                 const item = tree.getTreeItem(node);
-                assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.None);
+                assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
+                assert.equal(item.command, undefined);
                 assert.ok(item.iconPath instanceof vscode.ThemeIcon);
                 if (node.branch.name === current) {
                     assert.equal(item.iconPath.id, 'smart-git-pilot-current-branch');
@@ -151,7 +155,7 @@ suite('Branch panel', function () {
             assert.equal(group.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
             const branches = await tree.getChildren(origin);
             assert.deepEqual(branches.map(n => n.kind === 'branch' && n.label), ['topic/api', 'topic/ui']);
-            assert.ok(branches.every(n => tree.getTreeItem(n).collapsibleState === vscode.TreeItemCollapsibleState.None));
+            assert.ok(branches.every(n => tree.getTreeItem(n).collapsibleState === vscode.TreeItemCollapsibleState.Collapsed));
         } finally {
             tree.dispose();
         }
@@ -164,6 +168,221 @@ suite('Branch panel', function () {
         const branch = (await service.getBranches(repo)).find(b => b.ref === 'refs/remotes/origin/topic/ui')!;
         await vscode.commands.executeCommand('smart-commit-pilot.branches.switchTo', { kind: 'branch', repo, branch });
         assert.equal(git('symbolic-ref', '--short', 'HEAD'), 'my-topic');
+    });
+
+    test('Unopened local and remote branches expose their own history and read-only revision diffs', async () => {
+        const tree = new BranchTree(service, 'local', false);
+        const filename = '中文 #1.txt';
+        const root = git('rev-parse', 'main');
+        git('switch', '-c', 'history-demo', 'main');
+        try {
+            git('mv', 'notes', filename);
+            git('commit', '-qm', 'Rename notes');
+            const renamed = git('rev-parse', 'HEAD');
+            git('update-ref', 'refs/remotes/origin/history-demo', renamed);
+            await writeFile(join(dir, filename), 'second version\n');
+            git('commit', '-qam', 'Edit notes');
+            git('rm', filename);
+            git('commit', '-qm', 'Delete notes');
+            git('commit', '--allow-empty', '-qm', 'Empty commit');
+            git('switch', 'main');
+
+            const rows = () => tree.getChildren({ kind: 'repo', repo });
+            const local = (await rows()).find(n => n.kind === 'branch' && n.label === 'history-demo');
+            assert.ok(local);
+            const history = await tree.getChildren(local);
+            assert.deepEqual(history.map(n => tree.getTreeItem(n).label),
+                ['Empty commit', 'Delete notes', 'Edit notes', 'Rename notes', 'Base']);
+            assert.equal(tree.getTreeItem(history[1]).command, undefined);
+            assert.equal((await tree.getChildren(history[0]))[0].kind, 'emptyCommit');
+            const diff = async (commitIndex: number, status: string, before: string, after: string) => {
+                const [file] = await tree.getChildren(history[commitIndex]);
+                assert.equal(file.kind, 'file');
+                assert.equal(file.file.status, status);
+                const command = tree.getTreeItem(file).command!;
+                assert.equal(command.command, 'vscode.diff');
+                const [left, right] = command.arguments as [vscode.Uri, vscode.Uri];
+                assert.equal((await vscode.workspace.openTextDocument(left)).getText(), before);
+                assert.equal((await vscode.workspace.openTextDocument(right)).getText(), after);
+                return { file, command, left, right };
+            };
+            await diff(4, 'A', '', 'start\n');
+            const rename = await diff(3, 'R', 'start\n', 'start\n');
+            assert.equal(rename.file.file.previousPath, 'notes');
+            assert.equal(rename.file.file.path, filename);
+            const edit = await diff(2, 'M', 'start\n', 'second version\n');
+            await vscode.commands.executeCommand(edit.command.command, ...edit.command.arguments!);
+            const tab = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+            assert.ok(tab instanceof vscode.TabInputTextDiff);
+            assert.equal(tab.original.toString(), edit.left.toString());
+            assert.equal(tab.modified.toString(), edit.right.toString());
+            await diff(1, 'D', 'second version\n', '');
+
+            tree.mode = 'remote';
+            const origin = (await rows()).find(n => n.kind === 'server' && n.remote.name === 'origin');
+            assert.ok(origin);
+            const remote = (await tree.getChildren(origin)).find(n => n.kind === 'branch' && n.label === 'history-demo');
+            assert.ok(remote);
+            const remoteHistory = await tree.getChildren(remote);
+            assert.deepEqual(remoteHistory.map(n => tree.getTreeItem(n).label), ['Rename notes', 'Base']);
+            assert.notEqual(tree.getTreeItem(remoteHistory[0]).id, tree.getTreeItem(history[3]).id);
+            assert.equal(git('rev-parse', 'HEAD'), root);
+        } finally {
+            git('switch', 'main');
+            tree.dispose();
+        }
+    });
+
+    test('Older commits load on demand and a merge shows changes against its first parent', async () => {
+        const tree = new BranchTree(service, 'local', false);
+        const base = git('rev-parse', 'main');
+        const treeId = git('rev-parse', 'main^{tree}');
+        let tip = base;
+        for (let i = 1; i <= 31; i++) {
+            tip = git('commit-tree', treeId, '-p', tip, '-m', 'Change ' + i);
+        }
+        const other = git('rev-parse', 'refs/remotes/origin/topic/ui');
+        const emptyTree = git('mktree');
+        const emptyParent = git('commit-tree', emptyTree, '-p', other, '-m', 'Remove notes');
+        const merge = git('commit-tree', emptyTree, '-p', tip, '-p', emptyParent, '-m', 'Merge removal');
+        git('update-ref', 'refs/heads/paged-history', merge);
+        try {
+            const branch = (await tree.getChildren({ kind: 'repo', repo })).find(n => n.kind === 'branch' && n.label === 'paged-history');
+            assert.ok(branch);
+            const initial = await tree.getChildren(branch);
+            const more = initial[initial.length - 1];
+            assert.equal(more.kind, 'more');
+            assert.equal(initial.length, 31);
+            const [file] = await tree.getChildren(initial[0]);
+            assert.equal(file.kind, 'file');
+            assert.equal(file.file.status, 'D');
+            assert.equal(file.file.path, 'notes');
+            tree.showMore(more);
+            const all = await tree.getChildren(branch);
+            assert.equal(all.length, 34);
+            assert.equal(new Set(all.map(n => tree.getTreeItem(n).id)).size, 34);
+            assert.ok(all.every(n => n.kind === 'commit'));
+            assert.equal(all[all.length - 1].commit.hash, base);
+        } finally {
+            tree.dispose();
+        }
+    });
+
+    test('Commit files group by directory, keep short relative paths, and decorate each revision independently', async () => {
+        const [commit] = await service.getBranchHistory(repo, 'refs/heads/main', 1);
+        const context = { repo, ref: 'refs/heads/main', commit };
+        const tree = new BranchTree(service, 'local', false);
+        try {
+            const makeFile = (path: string, status = 'M') => ({ path, previousPath: path, status });
+            const files = ['README.md', 'package.json', 'src/extension.ts', 'src/test/extension.test.ts',
+                'src/modules/git/BlameRunner.ts', 'src/modules/git/GitService.ts', 'src/modules/git/typings/git.d.ts',
+                'src/modules/configuration/Configurator.ts'].map(p => makeFile(p));
+            const [src, ...rootFiles] = commitFileRows(context, files);
+            assert.equal(src.kind, 'commitFolder');
+            assert.equal(src.label, 'src');
+            assert.equal(tree.getTreeItem(src).collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+            assert.deepEqual(rootFiles.map(n => tree.getTreeItem(n).label), ['package.json', 'README.md']);
+            const [modules, ...directFiles] = await tree.getChildren(src);
+            assert.equal(modules.kind, 'commitFolder');
+            assert.equal(modules.label, 'modules');
+            assert.ok(directFiles.some(n => n.kind === 'file' && n.directory === 'test'));
+            const nested = await tree.getChildren(modules);
+            const typing = nested.find(n => n.kind === 'file' && n.file.path.endsWith('git.d.ts'));
+            assert.ok(typing);
+            const item = tree.getTreeItem(typing);
+            assert.equal(item.label, 'git.d.ts');
+            assert.equal(item.description, 'git/typings');
+            const decorate = commitFileDecorations.provideFileDecoration;
+            const status = decorate(item.resourceUri!);
+            assert.equal(status?.badge, 'M');
+            assert.deepEqual(status?.color, new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'));
+            assert.equal(decorate(vscode.Uri.joinPath(repo.rootUri, 'git.d.ts')), undefined);
+            const small = commitFileRows(context, files.slice(0, 5));
+            assert.ok(small.every(n => n.kind === 'file'));
+            const other = commitFileRows({ ...context, commit: { ...commit, hash: 'another-revision' } },
+                [makeFile('src/modules/git/typings/git.d.ts', 'A')])[0];
+            const otherUri = tree.getTreeItem(other).resourceUri!;
+            assert.notEqual(otherUri.toString(), item.resourceUri!.toString());
+            assert.equal(decorate(otherUri)?.badge, 'A');
+            const [compact] = commitFileRows(context, files.map(f => makeFile('deep/path/' + f.path)));
+            assert.equal(compact.kind, 'commitFolder');
+            assert.equal(compact.label, 'deep/path');
+            const icon = tree.getTreeItem({ ...context, kind: 'commit' }).iconPath;
+            assert.ok(icon instanceof vscode.Uri && icon.authority === 'www.gravatar.com');
+            assert.equal(icon.query, 's=32&d=robohash');
+            const sameAuthor = tree.getTreeItem({ ...context, kind: 'commit', commit: { ...commit, subject: 'Other message' } }).iconPath;
+            assert.equal(icon.toString(), sameAuthor?.toString());
+            const otherAuthor = tree.getTreeItem({ ...context, kind: 'commit', commit: { ...commit, authorEmail: 'another@example.invalid' } }).iconPath;
+            assert.notEqual(icon.toString(), otherAuthor?.toString());
+        } finally {
+            tree.dispose();
+        }
+    });
+
+    test('Commit hovers show file status counts and line totals beside the hash without a refs footer', async () => {
+        const tree = new BranchTree(service, 'local', false);
+        const cancel = new vscode.CancellationTokenSource();
+        git('switch', '-c', 'hover-demo', 'main');
+        try {
+            await writeFile(join(dir, 'existing'), 'before\n');
+            await writeFile(join(dir, 'obsolete'), 'delete me\n');
+            git('add', 'existing', 'obsolete');
+            git('commit', '-qm', 'Prepare hover stats');
+            git('mv', 'notes', 'renamed\tnotes');
+            git('rm', 'obsolete');
+            await writeFile(join(dir, 'existing'), 'before\nafter\n');
+            await writeFile(join(dir, 'extra'), 'one\ntwo\n');
+            git('add', 'existing', 'extra');
+            git('commit', '-qm', 'Preview hover', '-m', '说明 <label>\n第二行 & details');
+            git('tag', 'hover-test');
+            git('switch', 'main');
+            const [commit] = await service.getBranchHistory(repo, 'refs/heads/hover-demo', 1);
+            const details = await service.getCommitHoverDetails(repo, commit, new AbortController().signal);
+            assert.deepEqual(details.files, { added: 1, modified: 2, deleted: 1 });
+            assert.equal(details.additions, 3);
+            assert.equal(details.deletions, 1);
+            assert.ok(details.message.includes('第二行 & details'));
+            const node = { kind: 'commit' as const, repo, ref: 'refs/heads/hover-demo', commit };
+            const item = tree.getTreeItem(node);
+            assert.equal(item.tooltip, undefined);
+            const resolved = await tree.resolveTreeItem(item, node, cancel.token);
+            const card = resolved.tooltip;
+            assert.ok(card instanceof vscode.MarkdownString);
+            assert.ok(card.value.includes('s=64&d=robohash|width=32,height=32'));
+            assert.ok(card.value.includes('command:smart-commit-pilot.copyBlameHash'));
+            assert.ok(card.value.includes(commit.hash));
+            assert.ok(card.value.includes('第二行'));
+            assert.ok(card.value.includes('&lt;label&gt;'));
+            assert.match(card.value, />\+1<.*>~2<.*>-1</);
+            assert.ok(card.value.includes(vscode.l10n.t('{0} additions', 3)));
+            assert.ok(card.value.includes(vscode.l10n.t('1 deletion')));
+            assert.ok(!card.value.includes('hover-test') && !card.value.includes('$(git-branch)'));
+            if ((await vscode.commands.getCommands(true)).includes('git.viewCommit')) {
+                assert.ok(card.value.includes('command:git.viewCommit'));
+                await vscode.commands.executeCommand('git.viewCommit', repo.rootUri, commit.hash);
+                assert.ok(vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.label.includes(commit.hash.slice(0, 7)))));
+            }
+            const basic = commitHover(repo.rootUri, commit, undefined, false, false);
+            assert.ok(basic.value.includes('$(account)') && !basic.value.includes('https://'));
+            assert.ok(!basic.value.includes('command:git.viewCommit'));
+            cancel.cancel();
+            assert.equal((await tree.resolveTreeItem(tree.getTreeItem(node), node, cancel.token)).tooltip, undefined);
+            assert.equal(authorAvatar('123+dev@users.noreply.github.com', 32)?.toString(true),
+                'https://avatars.githubusercontent.com/u/123?size=32');
+            assert.equal(authorAvatar('dev@users.noreply.github.com', 32)?.authority, 'avatars.githubusercontent.com');
+            assert.equal(authorAvatar('', 32), undefined);
+            const [rootCommit] = await service.getBranchHistory(repo, 'refs/heads/main', 1);
+            const rootDetails = await service.getCommitHoverDetails(repo, rootCommit, new AbortController().signal);
+            assert.deepEqual(rootDetails.files, { added: 1, modified: 0, deleted: 0 });
+            assert.deepEqual([rootDetails.additions, rootDetails.deletions], [1, 0]);
+            const rootCard = commitHover(repo.rootUri, rootCommit, rootDetails, false, false);
+            assert.match(rootCard.value, />\+1<.*>~0<.*>-0</);
+            assert.equal(git('branch', '--show-current'), 'main');
+        } finally {
+            git('switch', 'main');
+            cancel.dispose();
+            tree.dispose();
+        }
     });
 
     test('Create-only uses the selected base and a conflicting checkout preserves local edits', async () => {

@@ -15,6 +15,29 @@ export interface BranchRef {
     readonly date: Date;
 }
 
+export interface HistoryCommit {
+    hash: string;
+    parent?: string;
+    author: string;
+    authorEmail: string;
+    date: Date;
+    subject: string;
+}
+
+export interface CommitFile {
+    path: string;
+    previousPath: string;
+    status: string;
+}
+
+export interface CommitHoverDetails {
+    message: string;
+    authoredAt: Date;
+    files: { added: number; modified: number; deleted: number };
+    additions: number;
+    deletions: number;
+}
+
 export interface BlameInfo {
     hash: string;
     author: string;
@@ -135,6 +158,78 @@ export class GitService {
 
     async switchBranch(repository: Repository, name: string): Promise<void> {
         await this.#runGit(repository.rootUri.fsPath, ['switch', '--no-guess', '--', name]);
+    }
+
+    async getBranchHistory(repo: Repository, ref: string, limit: number): Promise<HistoryCommit[]> {
+        const output = await this.#runGit(repo.rootUri.fsPath, [
+            'log', '--no-color', '--no-notes', '--no-show-signature', '--date-order', '-z',
+            '--format=%H%x00%P%x00%aN%x00%aE%x00%ct%x00%s', '--max-count=' + limit, ref, '--',
+        ], '', undefined, 32 * 1024 * 1024);
+        const fields = output.split('\0');
+        const commits: HistoryCommit[] = [];
+        for (let i = 0; i + 5 < fields.length; i += 6) {
+            const [hash, parents, author, authorEmail, timestamp, subject] = fields.slice(i, i + 6);
+            commits.push({ hash, parent: parents.split(' ')[0] || undefined, author, authorEmail, date: new Date(Number(timestamp) * 1000), subject });
+        }
+        return commits;
+    }
+
+    async getCommitFiles(repo: Repository, commit: HistoryCommit): Promise<CommitFile[]> {
+        // Comparing the trees explicitly also handles merge commits relative to their first parent.
+        const revisions = commit.parent ? [commit.parent, commit.hash] : ['--root', commit.hash];
+        const output = await this.#runGit(repo.rootUri.fsPath, [
+            'diff-tree', '-r', '--no-commit-id', '--name-status', '-z', '-M', ...revisions, '--',
+        ], '', undefined, 32 * 1024 * 1024);
+        const fields = output.split('\0');
+        const files: CommitFile[] = [];
+        for (let i = 0; i < fields.length - 1;) {
+            const status = fields[i++][0];
+            const previousPath = fields[i++];
+            const path = status === 'R' || status === 'C' ? fields[i++] : previousPath;
+            files.push({ status, path, previousPath });
+        }
+        return files;
+    }
+
+    async getCommitHoverDetails(repo: Repository, commit: HistoryCommit, signal: AbortSignal): Promise<CommitHoverDetails> {
+        const revisions = commit.parent ? [commit.parent, commit.hash] : ['--root', commit.hash];
+        const [metadata, changes] = await Promise.all([
+            this.#runGit(repo.rootUri.fsPath, ['show', '-s', '--no-color', '--no-notes', '--no-show-signature',
+                '--no-decorate', '--format=%at%x00%B', commit.hash, '--'], '', signal),
+            this.#runGit(repo.rootUri.fsPath, ['diff-tree', '-r', '--no-commit-id', '--raw', '--numstat', '-z', '-M',
+                '--no-ext-diff', '--no-textconv', ...revisions, '--'], '', signal, 32 * 1024 * 1024),
+        ]);
+        const [timestamp, message] = metadata.split('\0');
+        const files = { added: 0, modified: 0, deleted: 0 };
+        let additions = 0, deletions = 0;
+        const fields = changes.split('\0');
+        // Git emits the raw status records first, then numstat records for the same comparison.
+        let i = 0;
+        while (fields[i]?.startsWith(':')) {
+            const header = fields[i];
+            const status = header[header.lastIndexOf(' ') + 1];
+            if (status === 'A' || status === 'C') {
+                files.added++;
+            } else if (status === 'D') {
+                files.deleted++;
+            } else {
+                files.modified++;
+            }
+            i += status === 'R' || status === 'C' ? 3 : 2;
+        }
+        for (; i < fields.length - 1; i++) {
+            const entry = /^(\d+|-)\t(\d+|-)\t/.exec(fields[i]);
+            if (!entry) {
+                continue;
+            }
+            additions += Number(entry[1]) || 0;
+            deletions += Number(entry[2]) || 0;
+            if (fields[i].length === entry[0].length) {
+                // With -z, a rename has an empty path here and two following path fields.
+                i += 2;
+            }
+        }
+        return { authoredAt: new Date(Number(timestamp) * 1000), message: message.trimEnd(), files, additions, deletions };
     }
 
     async createBranch(repository: Repository, name: string, startRef: string,

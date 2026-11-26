@@ -3,44 +3,25 @@
 All notable changes to the "smart-commit-pilot" extension will be documented in this file.
 
 This project follows [Keep a Changelog](http://keepachangelog.com/) conventions.
+Group related changes under Unreleased during development and assign one version when the batch is ready to publish.
 
 ## [Unreleased]
 
-## [0.2.7] - 2026-11-26
-
-- Use a cloud icon for each remote in the branch panel.
-
-## [0.2.6] - 2026-11-26
-
-- Made the Remotes heading fixed. Each remote starts collapsed and expands to a flat list of branch names. Layout controls now appear only on local branches.
-
-## [0.2.5] - 2026-11-26
-
-- Added an optional tree layout for local branches with compact prefix folders and the current branch pinned above them.
-
-## [0.2.4] - 2026-11-26
-
-- Use solid nodes on the current branch icon in the local branch list.
-
-## [0.2.3] - 2026-11-26
-
-- Show local branches in a flat list below the count row. The checked-out branch stays at the top and carries a persistent highlight.
-
-## [0.2.2] - 2026-11-26
-
-- Redrew the local and remote toolbar icons with a curved branch, a rounded cloud, and a shorter selection underline.
-
 ## [0.2.1] - 2026-11-26
 
-- Added flight-path and satellite-dish tabs to the Smart Git Pilot title bar.
-- Moved branch controls to the count row, added list and tree layouts, and grouped remote branches by remote with an Add Remote action.
+- Group changed files by folder in larger commits. Small groups show the filename and relative directory on one row.
+- Show the change status at the right edge of each file row. Commit rows use author avatars with a RoboHash fallback.
+- Hover a commit to read its full message and dates. The hash row shows added, modified and deleted file counts alongside line additions and deletions, with actions to inspect changes and copy the hash.
 
 ## [0.2.0] - 2026-11-26
 
 ### Added
 
-- Added a Source Control branch view with local and remote branches, upstreams, and latest commit times.
-- Added switching, tracking a remote branch locally, and creating a branch from the current checkout or a selected branch.
+- Browse local branches and remotes from the Smart Git Pilot panel in Source Control. Branch rows show the latest commit time and any configured upstream.
+- Expand a branch to browse its commit history and open file diffs from a selected commit.
+- Switch between a flat list and compact prefix folders for local branches. The current branch stays first with a solid-node branch icon and a persistent highlight.
+- Expand a cloud-marked remote such as `origin` to see its branches in a flat list. The fixed Remotes heading shows the remote count and offers add and refresh actions.
+- Switch branches, track a remote branch locally, or create a branch from the current checkout or a selected branch.
 
 ## [0.1.0] - 2026-07-13
 

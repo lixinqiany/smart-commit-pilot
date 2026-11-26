@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { createHash } from 'node:crypto';
+import { authorAvatar } from './authorAvatar';
 import { Configurator } from '../configuration/Configurator';
 import { formatRelativeTime } from './formatRelativeTime';
 import { BlameInfo, GitService } from './GitService';
@@ -233,8 +233,10 @@ function formatAvatar(email: string | undefined, author: string, enabled: boolea
         return '$(account)';
     }
 
-    const hash = createHash('md5').update(email.trim().toLowerCase()).digest('hex');
     const title = escapeMarkdown(author);
-    const uri = `https://www.gravatar.com/avatar/${hash}?s=32&d=robohash`;
+    const uri = authorAvatar(email, 64)?.toString(true);
+    if (!uri) {
+        return '$(account)';
+    }
     return `![${title}](${uri}|width=32,height=32 "${title}")`;
 }

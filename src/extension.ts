@@ -42,7 +42,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('smart-commit-pilot.selectModel', () => configurator.setupModel()),
 		vscode.commands.registerCommand('smart-commit-pilot.toggleLineBlame', () => configurator.toggleLineBlame()),
 		vscode.commands.registerCommand(COPY_BLAME_HASH_COMMAND, async (hash: unknown) => {
-			if (typeof hash === 'string' && /^[0-9a-f]{40}$/i.test(hash)) {
+			if (typeof hash === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(hash)) {
 				await vscode.env.clipboard.writeText(hash);
 			}
 		}),

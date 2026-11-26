@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { basename } from 'node:path';
 import { GitService, BranchRef } from './GitService';
-import { BRANCH_VIEW as VIEW, BranchMode, BranchNode, BranchTree, TreeNode } from './BranchTree';
+import { BRANCH_VIEW as VIEW, BranchMode, BranchNode, BranchTree, EMPTY_FILE_SCHEME, TreeNode } from './BranchTree';
 import { Repository } from './typings/git';
+import { commitFileDecorations } from './CommitFiles';
 
 const t = vscode.l10n.t;
 
@@ -22,6 +23,18 @@ export class BranchesView implements vscode.Disposable {
         this.disposables = [
             this.tree,
             vscode.window.registerTreeDataProvider(VIEW, this.tree),
+            vscode.window.registerFileDecorationProvider(commitFileDecorations),
+            vscode.workspace.onDidChangeConfiguration(event => {
+                if (event.affectsConfiguration('smartCommitPilot.blame.avatars')) {
+                    this.tree.refresh();
+                }
+            }),
+            vscode.workspace.registerTextDocumentContentProvider(EMPTY_FILE_SCHEME, { provideTextDocumentContent: () => '' }),
+            vscode.commands.registerCommand(VIEW + '.more', (node?: TreeNode) => {
+                if (node?.kind === 'more') {
+                    this.tree.showMore(node);
+                }
+            }),
             git.api.onDidOpenRepository(repo => {
                 watch(repo);
                 this.tree.refresh();

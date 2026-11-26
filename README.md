@@ -18,7 +18,10 @@ Open **Source Control → Smart Git Pilot**. The two icons beside the view title
 
 - **Branches (N)** shows a flat list of full local branch names by default. Hover or focus the count row and select **View as Tree** to group other branches by slash-separated prefixes. A shared path such as `feature/mobile` appears as one folder. Select **View as List** to return to the flat list. The count row also offers switch, create (**+**), and refresh actions. The checked-out branch stays first and uses a branch icon with solid nodes and a **Current** label, even when another row is hovered.
 - **Remotes (N)** is a fixed heading. Each remote, such as `origin`, starts collapsed. Expand it to see fetched branches by their full name within that remote, such as `feature/login`. Empty remotes appear as plain rows. The heading’s **+** adds a remote by name and URL. Use **Git: Fetch** to retrieve remote refs.
-- Click a branch to see its actions. Switching to a remote branch reuses a local tracking branch or offers to create one. To start a branch, pick a base and choose whether to switch after creation.
+- Expand a local or remote branch to browse its commits. Expand a commit to see the files it changed, then select a file to compare that revision with its first parent. Select **Show more commits…** for older history.
+- Commit rows show the author’s avatar. Hover a commit to see its full message and dates. Next to the short hash, `+`, `~`, and `-` count added, modified, and deleted files. The following figures count lines added and deleted. Copy the full hash from the card or select the short hash to open the changes in VS Code versions with the built-in commit viewer.
+- Groups of up to five changed files show filenames with their directories beside them. Larger groups expand into folders. Each file’s badge shows its status in that commit.
+- Hover or right-click a branch to switch to it or create a branch from it. Switching to a remote branch reuses a local tracking branch or offers to create one.
 - In multi-repository workspaces the count row and its actions belong to the repository shown above it.
 
 ## Requirements
@@ -49,11 +52,11 @@ You can re-run **Setup Provider** or **Select Model** any time to switch provide
 | `smartCommitPilot.model` | Model used to generate commit messages, chosen via **Select Model**. |
 | `smartCommitPilot.prompt` | Custom instructions appended to the commit-message prompt. Leave empty to use the built-in Conventional Commits template. |
 | `smartCommitPilot.blame.enabled` | Shows commit information for the current editor line. Enabled by default. |
-| `smartCommitPilot.blame.avatars` | Shows Gravatar or generated cartoon avatars in blame hovers. Enabled by default. |
+| `smartCommitPilot.blame.avatars` | Shows author avatars in branch history and blame hovers. Enabled by default. |
 
 Your API key is **not** stored in this list — it lives in VS Code's secret storage and is set via **Setup Provider**.
 
-When blame avatars are enabled, Smart Git Pilot derives a Gravatar URL from the commit author's email address and VS Code may request that remote image. Disable `smartCommitPilot.blame.avatars` to use a local editor icon instead.
+With avatars enabled, VS Code can request an image from GitHub for a GitHub noreply identity or from Gravatar using a hash of the author’s email. Gravatar supplies a RoboHash robot when the author has no profile image. Turning off `smartCommitPilot.blame.avatars` uses the editor’s account icon.
 
 ## Commands
 

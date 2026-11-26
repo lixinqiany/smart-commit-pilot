@@ -18,8 +18,16 @@ import { CommitGenerator } from '../modules/git/CommitGenerator';
 import { GitService } from '../modules/git/GitService';
 import { Repository } from '../modules/git/typings/git';
 
-function modelStream(res: ServerResponse, provider: Venders, model: string,
-    usage: { input_tokens: number; output_tokens: number }, reasoning = false) {
+interface ModelUsage {
+    input_tokens: number;
+    output_tokens: number;
+    input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
+    cache_creation_input_tokens?: number | null;
+    cache_read_input_tokens?: number;
+    cache_creation?: { ephemeral_5m_input_tokens: number; ephemeral_1h_input_tokens: number };
+}
+
+function modelStream(res: ServerResponse, provider: Venders, model: string, usage: ModelUsage, reasoning = false) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' });
     res.setTimeout(5000, () => res.destroy());
     const send = (type: string, fields: object) => {
@@ -67,8 +75,8 @@ suite('Commit model calls', () => {
     let replies: string[] = [];
     let streamReply: ((res: ServerResponse) => void) | undefined;
     let bufferedGateway = false;
-    teardown(() => { replies = []; streamReply = undefined; bufferedGateway = false; });
-    let inputDetails: { cached_tokens: number; cache_write_tokens?: number } | undefined;
+    let usageOverride: ModelUsage | null | undefined;
+    teardown(() => { replies = []; streamReply = undefined; bufferedGateway = false; usageOverride = undefined; });
     const requests: { path?: string; body: Record<string, unknown> }[] = [];
     const server = createServer(async (req, res) => {
         let raw = '';
@@ -79,9 +87,11 @@ suite('Commit model calls', () => {
         requests.push({ path: req.url, body });
         if (body.stream && streamReply) { streamReply(res); return; }
         const reply = replies.shift() ?? subject;
-        const usage = { input_tokens: 2728, output_tokens: 17, input_tokens_details: inputDetails };
-        if (body.stream && !bufferedGateway) {
-            const provider = req.url === '/v1/messages' ? Venders.Anthropic : Venders.OpenAI;
+        const provider = req.url === '/v1/messages' ? Venders.Anthropic : Venders.OpenAI;
+        const usage = usageOverride === undefined ? { input_tokens: 2728, output_tokens: 17, ...(provider === Venders.Anthropic
+            ? { cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+            : { input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } }) } : usageOverride;
+        if (body.stream && !bufferedGateway && usage) {
             const stream = modelStream(res, provider, body.model, usage);
             stream.write(reply);
             stream.finish();
@@ -153,14 +163,53 @@ suite('Commit model calls', () => {
         assert.ok(!('cache_control' in body));
     });
 
-    test('Logs actual cache writes and distinguishes missing counts from zero', async () => {
-        const t = vscode.l10n.t;
-        for (inputDetails of [{ cached_tokens: 0, cache_write_tokens: 0 },
-            { cached_tokens: 0, cache_write_tokens: 2725 }, { cached_tokens: 64 }, undefined]) {
-            const { log } = await generate('gpt-6.1-sol');
-            assert.ok(log.includes(t('Prompt cache tokens: {0} read, {1} written.',
-                inputDetails?.cached_tokens ?? t('not reported'), inputDetails?.cache_write_tokens ?? t('not reported'))));
-        }
+    test('Logs the same four token fields for both providers and distinguishes zero from missing usage', async () => {
+        usageOverride = { input_tokens: 100, output_tokens: 17, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 20 } };
+        const openAI = (await generate('gpt-6.1-sol')).log.map(line => JSON.parse(line));
+        const counts = { uncachedInput: 50, cacheWrite: 20, cacheRead: 30, output: 17 };
+        assert.deepEqual(openAI.find(event => event.event === 'model.usage').tokens, counts);
+        assert.equal(openAI.at(-1).totalTokens, 117);
+
+        usageOverride = { input_tokens: 50, output_tokens: 17, cache_read_input_tokens: 30, cache_creation_input_tokens: null,
+            cache_creation: { ephemeral_5m_input_tokens: 15, ephemeral_1h_input_tokens: 5 } };
+        const claude = (await generate('claude', Venders.Anthropic)).log.map(line => JSON.parse(line));
+        assert.deepEqual(claude.find(event => event.event === 'model.usage').tokens, counts);
+        assert.equal(claude.at(-1).totalTokens, 117);
+
+        const { generator, log } = commitGenerator('compatible', Venders.OpenAI);
+        usageOverride = { input_tokens: 100, output_tokens: 17, input_tokens_details: { cached_tokens: 0 } };
+        await generator.run();
+        usageOverride = null;
+        await generator.run();
+        const events = log.map(line => JSON.parse(line));
+        const starts = events.filter(event => event.event === 'task.started');
+        const summaries = events.filter(event => event.event === 'task.finished');
+        const usages = events.filter(event => event.event === 'model.usage');
+        assert.equal(new Set(starts.map(event => event.taskId)).size, 2);
+        assert.deepEqual(summaries.map(event => event.taskId), starts.map(event => event.taskId));
+        assert.deepEqual(usages.map(event => [event.taskId, event.call]), starts.map(event => [event.taskId, 1]));
+        assert.deepEqual(usages[0].tokens, { uncachedInput: null, cacheWrite: null, cacheRead: 0, output: 17 });
+        assert.equal(summaries[0].totalTokens, 117);
+        assert.deepEqual(usages[1].tokens, { uncachedInput: null, cacheWrite: null, cacheRead: null, output: null });
+        assert.equal(summaries[1].totalTokens, null);
+        assert.equal(summaries[1].callsWithoutTotal, 1);
+    });
+
+    test('Includes provider-reported usage when a stream ends with an incomplete response', async () => {
+        streamReply = res => {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' });
+            res.end('event: response.incomplete\ndata: ' + JSON.stringify({ type: 'response.incomplete', response: {
+                usage: { input_tokens: 100, output_tokens: 17, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 20 } },
+            } }) + '\n\n');
+        };
+        const { generator, repo, log } = commitGenerator('model', Venders.OpenAI);
+        repo.inputBox.value = 'existing message';
+        await generator.run();
+        const events = log.map(line => JSON.parse(line));
+        assert.equal(repo.inputBox.value, 'existing message');
+        assert.equal(events.find(event => event.event === 'model.usage').totalTokens, 117);
+        assert.equal(events.at(-1).status, 'failed');
+        assert.equal(events.at(-1).totalTokens, 117);
     });
 
     test('Places the reusable prefix breakpoint on the diff only for both provider protocols', async () => {
@@ -322,7 +371,7 @@ suite('Commit model calls', () => {
                 };
                 let firstWrite!: () => void;
                 const preview = new Promise<void>(resolve => { firstWrite = resolve; });
-                const { generator, repo } = commitGenerator('model', provider, message => {
+                const { generator, repo, log } = commitGenerator('model', provider, message => {
                     if (message === 'fix:') { firstWrite(); }
                 });
                 requests.length = 0;
@@ -338,6 +387,9 @@ suite('Commit model calls', () => {
                 const expected = { success: subject, interrupted: 'original draft', edited: 'my own edit' };
                 assert.equal(repo.inputBox.value, expected[outcome]);
                 assert.equal(requests.length, 1);
+                const events = log.map(line => JSON.parse(line));
+                assert.equal(events.filter(event => event.event === 'task.started').length, 1);
+                assert.equal(events.at(-1).status, { success: 'completed', interrupted: 'failed', edited: 'cancelled' }[outcome]);
             }
         });
 

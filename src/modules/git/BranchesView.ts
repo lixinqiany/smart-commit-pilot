@@ -4,6 +4,7 @@ import { GitService, BranchRef } from './GitService';
 import { BRANCH_VIEW as VIEW, BranchMode, BranchNode, BranchTree, EMPTY_FILE_SCHEME, TreeNode } from './BranchTree';
 import { Repository } from './typings/git';
 import { commitFileDecorations } from './CommitFiles';
+import { pickBranchDeletion } from './branchDeletionPicker';
 
 const t = vscode.l10n.t;
 
@@ -64,6 +65,7 @@ export class BranchesView implements vscode.Disposable {
                 }
             }),
             this.command('createFrom', node => this.createBranch(node)),
+            this.command('delete', node => this.deleteBranch(node)),
         ];
     }
 
@@ -169,6 +171,9 @@ export class BranchesView implements vscode.Disposable {
                 }
             }
             items.unshift({ label, action: 'switch' });
+            if (!branch.remote) {
+                items.push({ label: t('Delete local branch…'), action: 'delete' });
+            }
         }
         const pick = await vscode.window.showQuickPick(items, { title: node.branch.name });
         if (pick?.action === 'create') {
@@ -177,6 +182,20 @@ export class BranchesView implements vscode.Disposable {
             await this.switchBranch(node);
         } else if (pick?.action === 'fetch') {
             await this.git.fetchBranch(repo, branch);
+        } else if (pick?.action === 'delete') {
+            await this.deleteBranch(node);
+        }
+    }
+
+    private async deleteBranch(node?: TreeNode): Promise<void> {
+        if (node?.kind !== 'branch' || node.branch.remote || node.branch.current) {
+            return;
+        }
+        const { repo, branch } = node;
+        const plan = await this.git.getBranchDeletion(repo, branch.ref);
+        const selected = await pickBranchDeletion(plan);
+        if (selected) {
+            await this.git.deleteLocalBranch(repo, plan, selected);
         }
     }
 

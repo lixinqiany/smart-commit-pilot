@@ -7,6 +7,8 @@ Group related changes under Unreleased during development and assign one version
 
 ## [Unreleased]
 
+- Delete a local branch from its context menu. The confirmation shows the upstream or fetched same-name remote branches and offers a force toggle.
+
 ## [0.2.2] - 2026-11-26
 
 - Add Tags, Contributors, and Refresh to the Smart Git Pilot title bar. Expand a tag or author to browse commits and file changes.

@@ -53,6 +53,7 @@ export interface Repository {
     fetch(remote?: string, ref?: string): Promise<void>;
     diff(cached?: boolean): Promise<string>;
     getConfig(key: string): Promise<string>;
+    getConfigs(): Promise<{ key: string; value: string }[]>;
 }
 
 export interface API {

@@ -103,6 +103,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "smart-commit-pilot.branches.delete",
+        "title": "%branches.delete%",
+        "category": "Smart Git Pilot",
+        "icon": "$(trash)"
+      },
+      {
         "command": "smart-commit-pilot.branches.local",
         "title": "%branches.local%",
         "category": "Smart Git Pilot",
@@ -262,6 +268,11 @@
       ],
       "view/item/context": [
         {
+          "command": "smart-commit-pilot.branches.delete",
+          "when": "view == smart-commit-pilot.branches && smart-commit-pilot.branches.mode == local && viewItem =~ /^pilotBranch(Fetchable)?$/",
+          "group": "2_manage@1"
+        },
+        {
           "command": "smart-commit-pilot.branches.switchTo",
           "when": "view == smart-commit-pilot.branches && viewItem =~ /^pilot(Current)?Branch(Fetchable)?$/",
           "group": "navigation@1"
@@ -333,6 +344,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "smart-commit-pilot.branches.delete",
+          "when": "false"
+        },
         {
           "command": "smart-commit-pilot.branches.switchTo",
           "when": "false"

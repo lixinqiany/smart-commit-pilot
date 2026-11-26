@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { BranchTree } from '../modules/git/BranchTree';
+import { deletionItems } from '../modules/git/branchDeletionPicker';
 import { authorAvatar } from '../modules/git/authorAvatar';
 import { commitHover } from '../modules/git/commitHover';
 import { commitFileDecorations, commitFileRows } from '../modules/git/CommitFiles';
@@ -418,6 +419,129 @@ suite('Branch panel', function () {
         } finally {
             tree.dispose();
             git('remote', 'remove', remote);
+        }
+    });
+
+    test('Local deletion protects unmerged commits, changed tips, and checked-out worktrees', async () => {
+        const localOnly = { force: false };
+        const forced = { ...localOnly, force: true };
+        const ref = 'refs/heads/delete/local';
+        const base = git('rev-parse', 'main');
+        const tip = git('commit-tree', 'main^{tree}', '-p', base, '-m', 'Unmerged local change');
+        git('update-ref', ref, tip);
+        const plan = await service.getBranchDeletion(repo, ref);
+        assert.deepEqual(plan.targets, []);
+        const items = deletionItems(plan, false);
+        assert.equal(items[0].description, '-d');
+        assert.equal(items[0].detail, vscode.l10n.t('No matching remote branch for {0} in the fetched refs.', 'delete/local'));
+        assert.equal(items.at(-1)?.description, '--force');
+        await assert.rejects(service.deleteLocalBranch(repo, plan, localOnly));
+        assert.equal(git('rev-parse', ref), tip);
+        git('update-ref', ref, base);
+        await assert.rejects(service.deleteLocalBranch(repo, plan, forced));
+        git('update-ref', ref, tip);
+        const worktree = join(dir, 'linked-worktree');
+        git('worktree', 'add', '-q', worktree, 'delete/local');
+        try {
+            await assert.rejects(service.deleteLocalBranch(repo, plan, forced));
+            assert.equal(git('rev-parse', ref), tip);
+        } finally {
+            git('worktree', 'remove', worktree);
+        }
+        await service.deleteLocalBranch(repo, plan, forced);
+        assert.equal(git('branch', '--list', 'delete/local'), '');
+        await assert.rejects(service.getBranchDeletion(repo, 'refs/heads/main'));
+        await assert.rejects(service.getBranchDeletion(repo, 'refs/remotes/origin/topic/ui'));
+    });
+
+    test('Combined deletion targets the configured server ref and protects against a stale or unmerged upstream', async () => {
+        const bare = join(dir, '.git', 'delete-demo.git');
+        const remote = 'delete/team';
+        const localName = 'delete/local-name';
+        const localRef = 'refs/heads/' + localName;
+        const serverRef = 'refs/heads/release/server-name';
+        const trackingRef = 'refs/remotes/' + remote + '/mapped/server-name';
+        const base = git('rev-parse', 'main');
+        const tip = git('commit-tree', 'main^{tree}', '-p', base, '-m', 'Remote only');
+        git('init', '-q', '--bare', bare);
+        await repo.addRemote(remote, bare);
+        git('config', 'remote.' + remote + '.fetch', '+refs/heads/release/*:refs/remotes/' + remote + '/mapped/*');
+        const track = () => git('branch', '--track', localName, remote + '/mapped/server-name');
+        const readRemote = () => git('--git-dir=' + bare, 'for-each-ref', '--format=%(objectname)', serverRef);
+        try {
+            git('push', '-q', remote, base + ':' + serverRef, base + ':' + localRef);
+            track();
+            const plan = await service.getBranchDeletion(repo, localRef);
+            assert.deepEqual(plan.targets, [{ remote, ref: serverRef, tip: base }]);
+            await service.deleteLocalBranch(repo, plan, { force: false });
+            assert.equal(readRemote(), base);
+            assert.equal(git('branch', '--list', localName), '');
+
+            track();
+            const merged = await service.getBranchDeletion(repo, localRef);
+            await service.deleteLocalBranch(repo, merged, { target: merged.targets[0], force: false });
+            assert.equal(readRemote(), '');
+            assert.equal(git('branch', '--list', localName), '');
+            assert.equal(git('--git-dir=' + bare, 'rev-parse', localRef), base);
+
+            git('push', '-q', remote, base + ':' + serverRef);
+            track();
+            const stale = await service.getBranchDeletion(repo, localRef);
+            git('push', '-q', bare, tip + ':' + serverRef);
+            await assert.rejects(service.deleteLocalBranch(repo, stale, { target: stale.targets[0], force: true }));
+            assert.equal(readRemote(), tip);
+            assert.equal(git('rev-parse', localRef), base);
+            git('fetch', '-q', remote);
+            assert.equal(git('rev-parse', trackingRef), tip);
+            const unmerged = await service.getBranchDeletion(repo, localRef);
+            await assert.rejects(service.deleteLocalBranch(repo, unmerged, { target: unmerged.targets[0], force: false }));
+            assert.equal(readRemote(), tip);
+            assert.equal(git('rev-parse', localRef), base);
+            await service.deleteLocalBranch(repo, unmerged, { target: unmerged.targets[0], force: true });
+            assert.equal(readRemote(), '');
+            assert.equal(git('branch', '--list', localName), '');
+        } finally {
+            git('remote', 'remove', remote);
+        }
+    });
+
+    test('An untracked branch offers each fetched namesake by its server name and deletes only the selected one', async () => {
+        const name = 'review/menu';
+        const ref = 'refs/heads/' + name;
+        const base = git('rev-parse', 'main');
+        const bare = join(dir, '.git', 'menu.git');
+        git('init', '-q', '--bare', bare);
+        await repo.addRemote('menu', bare);
+        try {
+            git('config', 'remote.menu.fetch', '+refs/heads/review/*:refs/remotes/menu/preview/*');
+            git('branch', '--no-track', name, 'main');
+            git('push', '-q', 'menu', base + ':' + ref);
+            git('update-ref', 'refs/remotes/origin/' + name, base);
+            const options = () => service.getBranchDeletion(repo, ref);
+            const plan = await options();
+            assert.deepEqual(plan.targets.map(t => t.remote).sort(), ['menu', 'origin']);
+            const rows = deletionItems(plan, false);
+            assert.equal(rows[0].target, undefined);
+            const row = rows.find(i => i.description === 'menu/review/menu');
+            assert.deepEqual(row?.target, { remote: 'menu', ref, tip: base });
+            assert.equal(deletionItems(plan, true)[0].description, '-D');
+
+            git('config', '--add', 'remote.menu.fetch', '^' + ref);
+            assert.deepEqual((await options()).targets.map(t => t.remote), ['origin']);
+            git('config', '--fixed-value', '--unset-all', 'remote.menu.fetch', '^' + ref);
+            git('branch', '--set-upstream-to=menu/preview/menu', name);
+            assert.deepEqual((await options()).targets.map(t => t.remote), ['menu']);
+            git('update-ref', '-d', 'refs/remotes/menu/preview/menu');
+            assert.deepEqual((await options()).targets, []);
+            git('branch', '--unset-upstream', name);
+            git('fetch', '-q', 'menu');
+            assert.ok(row?.target);
+            await service.deleteLocalBranch(repo, plan, { target: row.target, force: false });
+            assert.equal(git('--git-dir=' + bare, 'for-each-ref', '--format=%(objectname)', ref), '');
+            assert.equal(git('rev-parse', 'refs/remotes/origin/' + name), base);
+            assert.equal(git('branch', '--list', name), '');
+        } finally {
+            git('remote', 'remove', 'menu');
         }
     });
 

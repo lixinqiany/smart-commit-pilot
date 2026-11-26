@@ -7,6 +7,7 @@
   "branches.switchTo": "切换到此分支…",
   "branches.fetch": "抓取分支更新（Fetch）",
   "branches.createFrom": "从此分支创建…",
+  "branches.delete": "删除本地分支…",
   "branches.local": "本地分支",
   "branches.localActive": "本地分支（已选中）",
   "branches.remote": "远端仓库",

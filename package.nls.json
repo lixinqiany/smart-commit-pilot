@@ -7,6 +7,7 @@
   "branches.switchTo": "Switch to This Branch…",
   "branches.fetch": "Fetch Branch",
   "branches.createFrom": "Create Branch From Here…",
+  "branches.delete": "Delete Local Branch…",
   "branches.local": "Local Branches",
   "branches.localActive": "Local Branches (Selected)",
   "branches.remote": "Remotes",

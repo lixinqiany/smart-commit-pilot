@@ -9,6 +9,8 @@ const MAX_GIT_OUTPUT_BYTES = 1024 * 1024;
 
 export interface BranchRef {
     readonly ref: string;
+    readonly tip: string;
+    readonly checkedOut: boolean;
     readonly name: string;
     readonly remote: boolean;
     readonly current: boolean;
@@ -16,6 +18,29 @@ export interface BranchRef {
     readonly fetchRemote?: string;
     readonly upstreamSource?: string;
     readonly date: Date;
+}
+
+export interface BranchDeletion {
+    branch: BranchRef;
+    targets: RemoteDeletionTarget[];
+}
+
+export interface RemoteDeletionTarget {
+    remote: string;
+    ref: string;
+    tip: string;
+}
+
+// A fetch refspec can map a server branch into a differently named local tracking ref.
+function mapRef(ref: string, pattern: string, destination: string): string | undefined {
+    const [prefix, suffix] = pattern.split('*');
+    if (suffix === undefined) {
+        return ref === pattern ? destination : undefined;
+    }
+    if (ref.startsWith(prefix) && ref.endsWith(suffix) && ref.length >= prefix.length + suffix.length) {
+        return destination.replace('*', () => ref.slice(prefix.length, ref.length - suffix.length));
+    }
+    return undefined;
 }
 
 export interface RepositoryTag {
@@ -162,21 +187,21 @@ export class GitService {
         // Full refs distinguish namesakes, and Git forbids tabs and newlines in ref names.
         const output = await this.#runGit(repository.rootUri.fsPath, [
             'for-each-ref', '--sort=refname', '--sort=-HEAD',
-            '--format=%(refname)%09%(HEAD)%09%(upstream)%09%(committerdate:unix)%09%(symref)%09%(upstream:remotename)%09%(upstream:remoteref)',
+            '--format=%(refname)%09%(HEAD)%09%(upstream)%09%(committerdate:unix)%09%(symref)%09%(upstream:remotename)%09%(upstream:remoteref)%09%(objectname)%09%(if)%(worktreepath)%(then)1%(end)',
             'refs/heads', 'refs/remotes',
         ], { maxOutputBytes: 32 * 1024 * 1024 });
         const branches: BranchRef[] = [];
         const remotes = repository.state.remotes.map(r => r.name).filter(name => !name.startsWith('-'))
             .sort((a, b) => b.length - a.length);
         for (const line of output.split(/\r?\n/)) {
-            const [ref, head, upstream, timestamp, symbolicTarget, upstreamRemote, upstreamSource] = line.split('\t');
+            const [ref, head, upstream, timestamp, symbolicTarget, upstreamRemote, upstreamSource, tip, worktree] = line.split('\t');
             if (ref && !symbolicTarget) {
                 const name = ref.replace(/^refs\/(heads|remotes)\//, '');
                 const remote = ref.startsWith('refs/remotes/');
                 const fetchRemote = remote ? remotes.find(r => name.startsWith(r + '/'))
                     : remotes.find(r => r === upstreamRemote && upstreamSource);
                 branches.push({
-                    ref, name, current: head === '*', remote, upstream, fetchRemote, upstreamSource,
+                    ref, name, tip, checkedOut: worktree === '1', current: head === '*', remote, upstream, fetchRemote, upstreamSource,
                     date: new Date(Number(timestamp) * 1000),
                 });
             }
@@ -186,6 +211,79 @@ export class GitService {
 
     async switchBranch(repository: Repository, name: string): Promise<void> {
         await this.#runGit(repository.rootUri.fsPath, ['switch', '--no-guess', '--', name]);
+    }
+
+    async getBranchDeletion(repo: Repository, ref: string): Promise<BranchDeletion> {
+        const branches = await this.getBranches(repo);
+        const branch = branches.find(b => !b.remote && b.ref === ref);
+        if (!branch) {
+            throw new Error(vscode.l10n.t('Branch {0} no longer exists.', ref.replace(/^refs\/heads\//, '')));
+        }
+        if (branch.checkedOut || branch.current) {
+            throw new Error(vscode.l10n.t('Branch {0} is checked out in a worktree.', branch.name));
+        }
+        const tracking = new Map(branches.filter(b => b.remote).map(b => [b.ref, b.tip]));
+        const targets: RemoteDeletionTarget[] = [];
+        if (branch.upstream || !tracking.size) {
+            const tip = tracking.get(branch.upstream);
+            if (tip && branch.fetchRemote && branch.upstreamSource?.startsWith('refs/heads/')) {
+                targets.push({ remote: branch.fetchRemote, ref: branch.upstreamSource, tip });
+            }
+            return { branch, targets };
+        }
+        const configs = await repo.getConfigs();
+        // A configured but unmapped upstream must not be replaced with an unrelated namesake.
+        if (configs.some(c => c.key === 'branch.' + branch.name + '.merge')) {
+            return { branch, targets };
+        }
+        for (const { name } of repo.state.remotes) {
+            const specs = configs.filter(c => c.key === 'remote.' + name + '.fetch').map(c => c.value);
+            if (name.startsWith('-') || specs.some(s => s.startsWith('^') && mapRef(ref, s.slice(1), ref))) {
+                continue;
+            }
+            for (const spec of specs) {
+                const [from, to] = spec.replace(/^\+/, '').split(':');
+                const mapped = to && mapRef(ref, from, to);
+                const tip = mapped && tracking.get(mapped);
+                if (tip) {
+                    targets.push({ remote: name, ref, tip });
+                    break;
+                }
+            }
+        }
+        return { branch, targets };
+    }
+
+    async deleteLocalBranch(repo: Repository, plan: BranchDeletion, { force, target }: { force: boolean; target?: RemoteDeletionTarget }): Promise<void> {
+        const cwd = repo.rootUri.fsPath;
+        const { branch, targets } = await this.getBranchDeletion(repo, plan.branch.ref);
+        if (branch.tip !== plan.branch.tip || (target && !targets.some(t =>
+            t.remote === target.remote && t.ref === target.ref && t.tip === target.tip))) {
+            throw new Error(vscode.l10n.t('Branch or upstream changed. Review the deletion again.'));
+        }
+        const deleteLocal = () => this.#runGit(cwd, ['branch', force ? '-D' : '-d', '--', branch.name]);
+        if (!target) {
+            await deleteLocal();
+            return;
+        }
+
+        // The upstream cannot protect unmerged commits once both refs are removed.
+        if (!force && (await this.#runGit(cwd, ['rev-list', '-1', branch.tip, target.tip, '--not', 'HEAD', '--'])).trim()) {
+            throw new Error(vscode.l10n.t('Merge both branches into HEAD first, or select force deletion.'));
+        }
+        // Reject deletion if the server has moved since the displayed tracking ref was fetched.
+        await this.#runGit(cwd, ['push', '--no-follow-tags', '--force-with-lease=' + target.ref + ':' + target.tip,
+            '--', target.remote, ':' + target.ref]);
+        try {
+            const tip = await this.#runGit(cwd, ['rev-parse', '--verify', branch.ref]);
+            if (tip.trim() !== branch.tip) {
+                throw new Error(vscode.l10n.t('Branch or upstream changed. Review the deletion again.'));
+            }
+            await deleteLocal();
+        } catch (error) {
+            throw new Error(vscode.l10n.t('Remote branch {0} was deleted. Could not finish deleting local {1}. {2}',
+                target.remote + '/' + target.ref.slice('refs/heads/'.length), branch.name, error instanceof Error ? error.message : String(error)));
+        }
     }
 
     async fetchBranch(repo: Repository, branch: BranchRef): Promise<void> {
@@ -202,15 +300,8 @@ export class GitService {
                 if (!to || !from.startsWith('refs/')) {
                     continue;
                 }
-                if (to === branch.ref) {
-                    source = from;
-                    break;
-                }
-                const [prefix, suffix] = to.split('*');
-                if (suffix !== undefined && branch.ref.startsWith(prefix) && branch.ref.endsWith(suffix)
-                    && branch.ref.length >= prefix.length + suffix.length) {
-                    const match = branch.ref.slice(prefix.length, branch.ref.length - suffix.length);
-                    source = from.replace('*', () => match);
+                source = mapRef(branch.ref, to, from);
+                if (source) {
                     break;
                 }
             }

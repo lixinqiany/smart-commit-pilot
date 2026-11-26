@@ -3,7 +3,7 @@
   "branches.welcome": "打开 Git 仓库即可查看和管理分支。",
   "branches.switch": "切换分支…",
   "branches.create": "创建分支…",
-  "branches.refresh": "刷新分支",
+  "branches.refresh": "刷新视图",
   "branches.switchTo": "切换到此分支…",
   "branches.fetch": "抓取分支更新（Fetch）",
   "branches.createFrom": "从此分支创建…",
@@ -15,5 +15,11 @@
   "branches.listLayout": "以列表显示",
   "branches.treeLayout": "以树形显示",
   "branches.currentColor": "Smart Git Pilot 中当前本地分支标记的颜色。",
-  "branches.currentIcon": "用实心节点表示当前检出的分支。"
+  "branches.currentIcon": "用实心节点表示当前检出的分支。",
+  "branches.tags": "标签",
+  "branches.tagsActive": "标签（已选中）",
+  "branches.contributors": "贡献者",
+  "branches.contributorsActive": "贡献者（已选中）",
+  "branches.allContributors": "显示所有分支的贡献者",
+  "branches.currentContributors": "仅显示当前分支的贡献者"
 }

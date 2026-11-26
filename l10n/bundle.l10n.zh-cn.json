@@ -55,5 +55,14 @@
   "Remote {0} already exists.": "远端 {0} 已存在。",
   "Enter the remote URL or a local repository path.": "输入远端 URL 或本地仓库路径。",
   "Enter a valid remote address.": "请输入有效的远端地址。",
-  "Current": "当前"
+  "Current": "当前",
+  "Tags": "标签",
+  "Contributors": "贡献者",
+  "You": "你",
+  "All branches": "全部分支",
+  "Current branch": "当前分支",
+  "1 commit": "1 个提交",
+  "{0} commits": "{0} 个提交",
+  "No tags in this repository.": "此仓库暂无标签。",
+  "No contributors in this history.": "此范围内暂无贡献者。"
 }

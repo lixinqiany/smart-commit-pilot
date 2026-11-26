@@ -14,7 +14,7 @@ export class BranchesView implements vscode.Disposable {
 
     constructor(private readonly git: GitService, private readonly state: vscode.Memento) {
         this.tree = new BranchTree(git, state.get<BranchMode>(VIEW + '.mode', 'local'),
-            state.get(VIEW + '.localTree', false));
+            state.get(VIEW + '.localTree', false), state.get(VIEW + '.allContributors', false));
         void vscode.commands.executeCommand('setContext', VIEW + '.mode', this.tree.mode);
         const watch = (repo: Repository) => {
             this.listeners.set(repo.rootUri.toString(), repo.state.onDidChange(() => this.tree.refresh()));
@@ -45,12 +45,14 @@ export class BranchesView implements vscode.Disposable {
                 this.tree.refresh();
             }),
             vscode.commands.registerCommand(VIEW + '.refresh', () => this.tree.refresh()),
-            ...(['local', 'remote'] as const).flatMap(mode => [
+            ...(['local', 'remote', 'tags', 'contributors'] as const).flatMap(mode => [
                 vscode.commands.registerCommand(VIEW + '.' + mode, () => this.setMode(mode)),
                 vscode.commands.registerCommand(VIEW + '.' + mode + 'Active', () => this.setMode(mode)),
             ]),
             this.command('listLayout', () => this.setLocalLayout(false)),
             this.command('treeLayout', () => this.setLocalLayout(true)),
+            this.command('allContributors', () => this.setContributorScope(true)),
+            this.command('currentContributors', () => this.setContributorScope(false)),
             this.command('actions', node => this.actions(node?.kind === 'branch' ? node : undefined)),
             this.command('switch', node => this.switchBranch(node?.kind === 'local' ? node : undefined)),
             this.command('create', node => this.createBranch(node?.kind === 'local' ? node : undefined)),
@@ -97,6 +99,11 @@ export class BranchesView implements vscode.Disposable {
             this.tree.localTreeLayout = tree;
             await this.state.update(VIEW + '.localTree', tree);
         }
+    }
+
+    private async setContributorScope(all: boolean): Promise<void> {
+        this.tree.allContributors = all;
+        await this.state.update(VIEW + '.allContributors', all);
     }
 
     private async addRemote(selected?: Repository): Promise<void> {

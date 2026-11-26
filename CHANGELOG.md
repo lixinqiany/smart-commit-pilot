@@ -7,6 +7,10 @@ Group related changes under Unreleased during development and assign one version
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-26
+
+- Add Tags, Contributors, and Refresh to the Smart Git Pilot title bar. Expand a tag or author to browse commits and file changes.
+
 - Show Switch, Fetch, and Create (+) on branch rows. Fetch retrieves updates for the selected branch's remote-tracking ref.
 
 ## [0.2.1] - 2026-11-26

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { spawn } from 'node:child_process';
 import * as path from 'node:path';
+import { createInterface } from 'node:readline';
 import { API, GitExtension, Repository } from './typings/git';
 
 const ZERO_HASH = '0000000000000000000000000000000000000000';
@@ -15,6 +16,26 @@ export interface BranchRef {
     readonly fetchRemote?: string;
     readonly upstreamSource?: string;
     readonly date: Date;
+}
+
+export interface RepositoryTag {
+    name: string;
+    hash: string;
+    objectType: string;
+    date?: Date;
+    subject: string;
+}
+
+export interface Contributor {
+    name: string;
+    email: string;
+    count: number;
+    latest: Date;
+    current: boolean;
+}
+
+function contributorScope(allBranches: boolean): string[] {
+    return allBranches ? ['--branches', '--remotes', 'HEAD'] : ['HEAD'];
 }
 
 export interface HistoryCommit {
@@ -143,7 +164,7 @@ export class GitService {
             'for-each-ref', '--sort=refname', '--sort=-HEAD',
             '--format=%(refname)%09%(HEAD)%09%(upstream)%09%(committerdate:unix)%09%(symref)%09%(upstream:remotename)%09%(upstream:remoteref)',
             'refs/heads', 'refs/remotes',
-        ], '', undefined, 32 * 1024 * 1024);
+        ], { maxOutputBytes: 32 * 1024 * 1024 });
         const branches: BranchRef[] = [];
         const remotes = repository.state.remotes.map(r => r.name).filter(name => !name.startsWith('-'))
             .sort((a, b) => b.length - a.length);
@@ -200,11 +221,75 @@ export class GitService {
         await repo.fetch(remote, source);
     }
 
-    async getBranchHistory(repo: Repository, ref: string, limit: number): Promise<HistoryCommit[]> {
+    async getTags(repo: Repository): Promise<RepositoryTag[]> {
+        const cwd = repo.rootUri.fsPath;
+        const output = await this.#runGit(cwd, ['for-each-ref', '--sort=refname', '--sort=-creatordate',
+            '--format=%(refname:lstrip=2)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)%00%(creatordate:unix)%00%(subject)',
+            'refs/tags'], { maxOutputBytes: 32 * 1024 * 1024 });
+        const tags: RepositoryTag[] = [];
+        for (const line of output.split('\n')) {
+            if (!line) {
+                continue;
+            }
+            const [name, object, type, target, targetType, time, subject] = line.split('\0');
+            tags.push({ name, hash: target || object, objectType: targetType || type,
+                date: time ? new Date(Number(time) * 1000) : undefined, subject });
+        }
+        // for-each-ref peels one layer. Resolve nested annotated tags together.
+        const nested = tags.filter(tag => tag.objectType === 'tag');
+        if (nested.length) {
+            const peeled = await this.#runGit(cwd, ['cat-file', '--batch-check=%(objectname) %(objecttype)'],
+                { stdin: nested.map(tag => tag.hash + '^{}\n').join('') });
+            peeled.trimEnd().split('\n').forEach((line, i) => {
+                [nested[i].hash, nested[i].objectType] = line.split(' ');
+            });
+        }
+        return tags;
+    }
+
+    async getContributors(repo: Repository, allBranches: boolean): Promise<Contributor[]> {
+        const contributors = new Map<string, Contributor>();
+        const identity = await this.#getIdentity(repo);
+        const tally = (line: string) => {
+            const [name, email, time] = line.split('\0');
+            if (time === undefined) {
+                return;
+            }
+            const key = name + '\0' + email;
+            const latest = new Date(Number(time) * 1000);
+            const author = contributors.get(key);
+            if (author) {
+                author.count++;
+                if (latest > author.latest) {
+                    author.latest = latest;
+                }
+            } else {
+                contributors.set(key, { name, email, count: 1, latest,
+                    current: identity.name === name && identity.email?.toLowerCase() === email.toLowerCase() });
+            }
+        };
+        // Count the entire history while keeping only one record per author in memory.
+        await this.#runGit(repo.rootUri.fsPath, ['log', '--ignore-missing', '--no-merges', '--no-notes',
+            '--no-show-signature', '--format=%aN%x00%aE%x00%at', ...contributorScope(allBranches), '--'], { onLine: tally });
+        return [...contributors.values()].sort((a, b) => b.count - a.count || b.latest.getTime() - a.latest.getTime()
+            || a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
+    }
+
+    getContributorHistory(repo: Repository, author: Contributor, allBranches: boolean, limit: number): Promise<HistoryCommit[]> {
+        const identity = (author.name + ' <' + author.email + '>').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return this.readHistory(repo, ['--ignore-missing', '--no-merges', '--use-mailmap', '--extended-regexp',
+            '--author=^' + identity, ...contributorScope(allBranches)], limit);
+    }
+
+    getBranchHistory(repo: Repository, ref: string, limit: number): Promise<HistoryCommit[]> {
+        return this.readHistory(repo, [ref], limit);
+    }
+
+    private async readHistory(repo: Repository, revisions: string[], limit: number): Promise<HistoryCommit[]> {
         const output = await this.#runGit(repo.rootUri.fsPath, [
             'log', '--no-color', '--no-notes', '--no-show-signature', '--date-order', '-z',
-            '--format=%H%x00%P%x00%aN%x00%aE%x00%ct%x00%s', '--max-count=' + limit, ref, '--',
-        ], '', undefined, 32 * 1024 * 1024);
+            '--format=%H%x00%P%x00%aN%x00%aE%x00%ct%x00%s', '--max-count=' + limit, ...revisions, '--',
+        ], { maxOutputBytes: 32 * 1024 * 1024 });
         const fields = output.split('\0');
         const commits: HistoryCommit[] = [];
         for (let i = 0; i + 5 < fields.length; i += 6) {
@@ -219,7 +304,7 @@ export class GitService {
         const revisions = commit.parent ? [commit.parent, commit.hash] : ['--root', commit.hash];
         const output = await this.#runGit(repo.rootUri.fsPath, [
             'diff-tree', '-r', '--no-commit-id', '--name-status', '-z', '-M', ...revisions, '--',
-        ], '', undefined, 32 * 1024 * 1024);
+        ], { maxOutputBytes: 32 * 1024 * 1024 });
         const fields = output.split('\0');
         const files: CommitFile[] = [];
         for (let i = 0; i < fields.length - 1;) {
@@ -235,9 +320,9 @@ export class GitService {
         const revisions = commit.parent ? [commit.parent, commit.hash] : ['--root', commit.hash];
         const [metadata, changes] = await Promise.all([
             this.#runGit(repo.rootUri.fsPath, ['show', '-s', '--no-color', '--no-notes', '--no-show-signature',
-                '--no-decorate', '--format=%at%x00%B', commit.hash, '--'], '', signal),
+                '--no-decorate', '--format=%at%x00%B', commit.hash, '--'], { signal }),
             this.#runGit(repo.rootUri.fsPath, ['diff-tree', '-r', '--no-commit-id', '--raw', '--numstat', '-z', '-M',
-                '--no-ext-diff', '--no-textconv', ...revisions, '--'], '', signal, 32 * 1024 * 1024),
+                '--no-ext-diff', '--no-textconv', ...revisions, '--'], { signal, maxOutputBytes: 32 * 1024 * 1024 }),
         ]);
         const [timestamp, message] = metadata.split('\0');
         const files = { added: 0, modified: 0, deleted: 0 };
@@ -306,8 +391,7 @@ export class GitService {
                 this.#runGit(
                     repository.rootUri.fsPath,
                     ['blame', '--line-porcelain', '-L', `${line + 1},${line + 1}`, '--contents', '-', '--', relativePath],
-                    contents,
-                    signal
+                    { stdin: contents, signal }
                 ),
                 this.#getIdentity(repository),
             ]);
@@ -337,10 +421,9 @@ export class GitService {
     #runGit(
         cwd: string,
         args: readonly string[],
-        stdin = '',
-        signal?: AbortSignal,
-        maxOutputBytes = MAX_GIT_OUTPUT_BYTES
+        options: { stdin?: string; signal?: AbortSignal; maxOutputBytes?: number; onLine?: (line: string) => void } = {}
     ): Promise<string> {
+        const { stdin = '', signal, maxOutputBytes = MAX_GIT_OUTPUT_BYTES, onLine } = options;
         const gitPath = this.api.git.path;
 
         return new Promise((resolve, reject) => {
@@ -363,15 +446,19 @@ export class GitService {
                 callback();
             };
 
-            child.stdout?.on('data', (chunk: Buffer) => {
-                outputSize += chunk.length;
-                if (outputSize > maxOutputBytes) {
-                    child.kill();
-                    finish(() => reject(new Error('Git output exceeded the maximum buffer size.')));
-                    return;
-                }
-                stdout.push(chunk);
-            });
+            if (onLine && child.stdout) {
+                createInterface({ input: child.stdout, crlfDelay: Infinity }).on('line', onLine);
+            } else {
+                child.stdout?.on('data', (chunk: Buffer) => {
+                    outputSize += chunk.length;
+                    if (outputSize > maxOutputBytes) {
+                        child.kill();
+                        finish(() => reject(new Error('Git output exceeded the maximum buffer size.')));
+                        return;
+                    }
+                    stdout.push(chunk);
+                });
+            }
             child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
             child.on('error', (error) => finish(() => reject(error)));
             child.on('close', (code) => finish(() => {

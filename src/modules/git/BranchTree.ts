@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { basename, posix } from 'node:path';
-import { BranchRef, GitService, HistoryCommit } from './GitService';
+import { BranchRef, Contributor, GitService, HistoryCommit, RepositoryTag } from './GitService';
 import { authorAvatar } from './authorAvatar';
 import { commitHover } from './commitHover';
 import { CommitFileNode, CommitFolderNode, commitFileRows, commitFileUri } from './CommitFiles';
@@ -10,11 +10,16 @@ import { formatRelativeTime } from './formatRelativeTime';
 export const BRANCH_VIEW = 'smart-commit-pilot.branches';
 export const EMPTY_FILE_SCHEME = 'smart-git-pilot-empty';
 const HISTORY_PAGE_SIZE = 30;
-export type BranchMode = 'local' | 'remote';
+export type BranchMode = 'local' | 'remote' | 'tags' | 'contributors';
 export type BranchNode = { kind: 'branch'; repo: Repository; branch: BranchRef; label: string };
+type TagNode = { kind: 'tag'; repo: Repository; tag: RepositoryTag };
+type ContributorNode = { kind: 'contributor'; repo: Repository; author: Contributor; allBranches: boolean };
 type RemoteGroup = { name: string; branches: BranchRef[] };
 type CommitNode = { kind: 'commit'; repo: Repository; ref: string; commit: HistoryCommit };
-export type TreeNode = BranchNode
+export type TreeNode = BranchNode | TagNode | ContributorNode
+    | { kind: 'tags'; repo: Repository; count: number }
+    | { kind: 'contributors'; repo: Repository; count: number }
+    | { kind: 'emptyView'; repo: Repository; message: string }
     | CommitNode | CommitFileNode | CommitFolderNode
     | { kind: 'more'; repo: Repository; ref: string; nextLimit: number }
     | { kind: 'emptyCommit'; repo: Repository }
@@ -96,7 +101,7 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
     readonly onDidChangeTreeData = this.changes.event;
 
     constructor(private readonly git: GitService, public mode: BranchMode,
-        public localTreeLayout: boolean) {}
+        public localTreeLayout: boolean, public allContributors = false) {}
 
     refresh(): void {
         this.changes.fire();
@@ -111,11 +116,14 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
         this.refresh();
     }
 
-    private async commitRows(node: BranchNode): Promise<TreeNode[]> {
-        const { repo, branch } = node;
-        const ref = branch.ref;
+    private async commitRows(node: BranchNode | TagNode | ContributorNode): Promise<TreeNode[]> {
+        const { repo } = node;
+        const ref = node.kind === 'branch' ? node.branch.ref : node.kind === 'tag' ? 'refs/tags/' + node.tag.name
+            : JSON.stringify(['contributor', node.allBranches, node.author.name, node.author.email]);
         const limit = this.historyLimits.get(JSON.stringify([repo.rootUri.toString(), ref])) ?? HISTORY_PAGE_SIZE;
-        const commits = await this.git.getBranchHistory(repo, ref, limit + 1);
+        const commits = node.kind === 'contributor'
+            ? await this.git.getContributorHistory(repo, node.author, node.allBranches, limit + 1)
+            : await this.git.getBranchHistory(repo, node.kind === 'tag' ? node.tag.hash : ref, limit + 1);
         const rows: TreeNode[] = commits.slice(0, limit).map(commit => ({ kind: 'commit', repo, ref, commit }));
         if (commits.length > limit) {
             rows.push({ kind: 'more', repo, ref, nextLimit: limit + HISTORY_PAGE_SIZE });
@@ -127,9 +135,14 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
         switch (node?.kind) {
             case 'local':
             case 'remote':
+            case 'tags':
+            case 'contributors':
+            case 'emptyView':
             case 'file':
             case 'more':
             case 'emptyCommit': return [];
+            case 'tag': return node.tag.objectType === 'commit' ? this.commitRows(node) : [];
+            case 'contributor':
             case 'branch': return this.commitRows(node);
             case 'commit': {
                 const files = await this.git.getCommitFiles(node.repo, node.commit);
@@ -144,6 +157,20 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
             return repos.map(repo => ({ kind: 'repo', repo }));
         }
         const repo = node?.repo ?? repos[0];
+        if (this.mode === 'tags') {
+            const tags = await this.git.getTags(repo);
+            const rows: TreeNode[] = tags.length ? tags.map(tag => ({ kind: 'tag', repo, tag }))
+                : [{ kind: 'emptyView', repo, message: t('No tags in this repository.') }];
+            return [{ kind: 'tags', repo, count: tags.length }, ...rows];
+        }
+        if (this.mode === 'contributors') {
+            const allBranches = this.allContributors;
+            const contributors = await this.git.getContributors(repo, allBranches);
+            const rows: TreeNode[] = contributors.length
+                ? contributors.map(author => ({ kind: 'contributor', repo, author, allBranches }))
+                : [{ kind: 'emptyView', repo, message: t('No contributors in this history.') }];
+            return [{ kind: 'contributors', repo, count: contributors.length }, ...rows];
+        }
         const refs = await this.git.getBranches(repo);
         if (this.mode === 'local') {
             // getBranches reads HEAD and sorts it first in the same Git query.
@@ -176,6 +203,36 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
             item.contextValue = local ? (this.localTreeLayout ? 'pilotLocalTree' : 'pilotLocalList') : 'pilotRemote';
             return item;
         }
+        if (node.kind === 'tags' || node.kind === 'contributors') {
+            const tags = node.kind === 'tags';
+            const item = new vscode.TreeItem(tags ? t('Tags') : t('Contributors'), None);
+            item.id = JSON.stringify([root, 'summary', node.kind]);
+            item.description = '(' + node.count + ')' + (tags ? '' : '  •  ' + (this.allContributors ? t('All branches') : t('Current branch')));
+            item.contextValue = tags ? 'pilotTags'
+                : (this.allContributors ? 'pilotContributorsAll' : 'pilotContributorsCurrent');
+            return item;
+        }
+        if (node.kind === 'emptyView') {
+            return new vscode.TreeItem(node.message, None);
+        }
+        if (node.kind === 'tag') {
+            const { tag } = node;
+            const item = new vscode.TreeItem(tag.name, tag.objectType === 'commit' ? Collapsed : None);
+            item.id = JSON.stringify([root, 'tag', tag.name]);
+            item.iconPath = new vscode.ThemeIcon('tag');
+            item.description = [tag.hash.slice(0, 7), tag.date && formatRelativeTime(tag.date), tag.subject].filter(Boolean).join('  •  ');
+            item.tooltip = [tag.name, tag.subject, tag.hash, tag.date?.toLocaleString(vscode.env.language)].filter(Boolean).join('\n');
+            return item;
+        }
+        if (node.kind === 'contributor') {
+            const { author } = node;
+            const item = new vscode.TreeItem(author.current ? t('You') : author.name, Collapsed);
+            item.id = JSON.stringify([root, 'contributor', node.allBranches, author.name, author.email]);
+            item.iconPath = (avatarsEnabled(node.repo) && authorAvatar(author.email, 32)) || new vscode.ThemeIcon('account');
+            item.description = formatRelativeTime(author.latest) + '  •  ' + (author.count === 1 ? t('1 commit') : t('{0} commits', author.count));
+            item.tooltip = [author.name + ' <' + author.email + '>', item.description].join('\n');
+            return item;
+        }
         if (node.kind === 'server') {
             const item = new vscode.TreeItem(node.remote.name, node.remote.branches.length ? Collapsed : None);
             item.id = JSON.stringify([root, 'remoteGroup', node.remote.name]);
@@ -187,7 +244,7 @@ export class BranchTree implements vscode.TreeDataProvider<TreeNode>, vscode.Dis
         }
         if (node.kind === 'folder') {
             const item = new vscode.TreeItem(node.label, Collapsed);
-            item.id = JSON.stringify([root, 'folder', this.mode, node.prefix]);
+            item.id = JSON.stringify([root, 'folder', 'local', node.prefix]);
             item.iconPath = new vscode.ThemeIcon('folder');
             return item;
         }

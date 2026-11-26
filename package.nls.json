@@ -3,7 +3,7 @@
   "branches.welcome": "Open a Git repository to manage its branches.",
   "branches.switch": "Switch Branch…",
   "branches.create": "Create Branch…",
-  "branches.refresh": "Refresh Branches",
+  "branches.refresh": "Refresh View",
   "branches.switchTo": "Switch to This Branch…",
   "branches.fetch": "Fetch Branch",
   "branches.createFrom": "Create Branch From Here…",
@@ -15,5 +15,11 @@
   "branches.listLayout": "View as List",
   "branches.treeLayout": "View as Tree",
   "branches.currentColor": "Color of the checked-out branch indicator in Smart Git Pilot.",
-  "branches.currentIcon": "Branch with filled nodes for the current checkout."
+  "branches.currentIcon": "Branch with filled nodes for the current checkout.",
+  "branches.tags": "Tags",
+  "branches.tagsActive": "Tags (Selected)",
+  "branches.contributors": "Contributors",
+  "branches.contributorsActive": "Contributors (Selected)",
+  "branches.allContributors": "Show Contributors from All Branches",
+  "branches.currentContributors": "Show Contributors from Current Branch"
 }

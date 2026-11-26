@@ -14,9 +14,11 @@ Manage Git branches, inspect current-line history, and generate AI-powered commi
 
 ## Branches
 
-Open **Source Control → Smart Git Pilot**. The two icons beside the view title select local branches (three connected dots) or remotes (cloud). The active icon has an underline. Each workspace remembers the last view and the local branch layout.
+Open **Source Control → Smart Git Pilot**. Use the title icons to select local branches, remotes, tags, or contributors. The refresh arrow reloads the selected view. The active icon has an underline. Each workspace remembers the last view and the local branch layout.
 
 - **Branches (N)** shows a flat list of full local branch names by default. Hover or focus the count row and select **View as Tree** to group other branches by slash-separated prefixes. A shared path such as `feature/mobile` appears as one folder. Select **View as List** to return to the flat list. The count row also offers switch, create (**+**), and refresh actions. The checked-out branch stays first and uses a branch icon with solid nodes and a **Current** label, even when another row is hovered.
+- **Tags (N)** lists local tags by their full names, newest first. Expand a tag to browse its history, or hover to read its message.
+- **Contributors (N)** shows commit authors on the current branch by non-merge commit count, with their latest contribution time. Expand an author to see their commits. The count row switches between the current branch and all local and remote branches.
 - **Remotes (N)** is a fixed heading. Each remote, such as `origin`, starts collapsed. Expand it to see fetched branches by their full name within that remote, such as `feature/login`. Empty remotes appear as plain rows. The heading’s **+** adds a remote by name and URL. Use **Git: Fetch** to retrieve remote refs.
 - Expand a local or remote branch to browse its commits. Expand a commit to see the files it changed, then select a file to compare that revision with its first parent. Select **Show more commits…** for older history.
 - Commit rows show the author’s avatar. Hover a commit to see its full message and dates. Next to the short hash, `+`, `~`, and `-` count added, modified, and deleted files. The following figures count lines added and deleted. Copy the full hash from the card or select the short hash to open the changes in VS Code versions with the built-in commit viewer.

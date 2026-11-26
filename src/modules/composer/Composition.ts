@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { AdaptorFactory } from '../adaptor/AdaptorFactory';
-import { logTokenUsage } from '../adaptor/logTokenUsage';
 import { Configurator } from '../configuration/Configurator';
 import { Venders } from '../configuration/configuration.constants';
+import { TaskLog } from '../configuration/TaskLog';
 import { messageRequest } from '../git/messageRequest';
 import { collectChanges } from './changes';
 import { DraftPreview, DraftProgress, Report } from './draftPreview';
@@ -15,8 +15,9 @@ import { CheckProgress, dependencyOrder, intermediateErrors, SequenceValidator }
 
 const t = vscode.l10n.t;
 
-async function withProgress<T>(signal: AbortSignal, run: (signal: AbortSignal, report: Report) => Promise<T>): Promise<T | undefined> {
-    if (signal.aborted) { return; }
+async function withProgress<T>(signal: AbortSignal, run: (signal: AbortSignal, report: Report) => Promise<T>,
+    task?: TaskLog): Promise<T | undefined> {
+    if (signal.aborted) { task?.stop('cancelled'); return; }
     return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('Prepare commit drafts'), cancellable: true },
         async (progress, token) => {
             const abort = new AbortController();
@@ -24,11 +25,18 @@ async function withProgress<T>(signal: AbortSignal, run: (signal: AbortSignal, r
             const subscription = token.onCancellationRequested(cancel);
             signal.addEventListener('abort', cancel, { once: true });
             try {
-                if (signal.aborted || token.isCancellationRequested) { return; }
-                const result = await run(abort.signal, message => progress.report({ message }));
+                if (signal.aborted || token.isCancellationRequested) { cancel(); return; }
+                const result = await run(abort.signal, (message, step) => {
+                    progress.report({ message });
+                    if (!abort.signal.aborted) { task?.progress(step ?? 'composer', { message }); }
+                });
                 if (!abort.signal.aborted) { return result; }
             } catch (err) { if (!abort.signal.aborted) { throw err; } }
-            finally { subscription.dispose(); signal.removeEventListener('abort', cancel); }
+            finally {
+                if (abort.signal.aborted) { task?.stop('cancelled'); }
+                subscription.dispose();
+                signal.removeEventListener('abort', cancel);
+            }
         });
 }
 
@@ -38,6 +46,12 @@ export class Composition {
     constructor(private readonly git: ComposerGit, private readonly config: Pick<Configurator, 'getModel' | 'setupModel' | 'getPrompt' | 'getBaseURLandSecrets' | 'log'>) {}
     get model(): string { return this.config.getModel('composer.model'); }
     selectModel() { return this.config.setupModel('composer.model'); }
+
+    private runTask<T>(operation: string, scope: Scope, signal: AbortSignal,
+        run: (signal: AbortSignal, report: Report, task: TaskLog) => Promise<T>) {
+        return TaskLog.run(line => this.config.log(line), operation, { repository: this.git.root, scope },
+            task => withProgress(signal, (signal, report) => run(signal, report, task), task));
+    }
 
     async previewFiles(scope: Scope) {
         const snapshot = await withScratch(dir => this.git.capture(scope, join(dir, 'index')));
@@ -54,10 +68,10 @@ export class Composition {
 
     async start(scope: Scope, guidance: string, manual: boolean, signal: AbortSignal, depth: Depth = 'auto',
         onProgress?: (event: DraftProgress) => void) {
-        return withProgress(signal, async (signal, notification) => {
+        return this.runTask(manual ? 'group_manually' : 'generate_commit_drafts', scope, signal, async (signal, notification, task) => {
             const publish = (event: DraftProgress) => { if (!signal.aborted) { onProgress?.(event); } };
             const report: Report = (text, step) => {
-                notification(text);
+                notification(text, step);
                 publish({ type: 'status', text, at: performance.now(), ...(step ? { step } : {}) });
             };
             report(t('Reading selected changes…'), 'changes');
@@ -72,7 +86,7 @@ export class Composition {
             }
             report(t('Read {0} changed files.', files.length), 'changes');
             if (!this.model) { report(t('Selecting a split model…'), 'model'); }
-            const connection = await this.connect(signal);
+            const connection = await this.connect(signal, task);
             if (!connection) { return; }
             const { model, ask } = connection;
             const ctx = { model, convention: this.config.getPrompt(), files, guidance };
@@ -80,6 +94,7 @@ export class Composition {
             const deep = chooseDepth(files, depth);
             const key = JSON.stringify([snapshot.base, snapshot.target, scope, connection.provider, connection.baseUrl, model, ctx.convention, guidance]);
             const analysis = deep && this.lastAnalysis?.key === key ? this.lastAnalysis.analysis : undefined;
+            task.progress('plan_drafts', { mode: deep ? 'deep' : 'quick', reusedAnalysis: !!analysis, files: files.length });
             // Retry a failed or interrupted attempt with a fresh analysis next time.
             if (deep) { this.lastAnalysis = undefined; }
             const result = await planGroups(ctx, { deep, analysis, instructions: [] }, ask, report, { preview });
@@ -108,9 +123,9 @@ export class Composition {
     }
 
     async refine(plan: Plan, guidance: string, signal: AbortSignal) {
-        if (plan.drafts.every(d => d.locked)) { throw new Error(t('Unlock a draft to continue.')); }
-        return withProgress(signal, async (signal, report) => {
-            const connection = await this.connect(signal);
+        return this.runTask('refine_commit_drafts', plan.snapshot.scope, signal, async (signal, report, task) => {
+            if (plan.drafts.every(d => d.locked)) { throw new Error(t('Unlock a draft to continue.')); }
+            const connection = await this.connect(signal, task);
             if (!connection) { return; }
             const { model, ask } = connection;
             const ctx = { model, convention: this.config.getPrompt(), files: plan.source, guidance, previous: plan.drafts };
@@ -155,12 +170,12 @@ export class Composition {
     }
 
     async split(plan: Plan, index: number, guidance: string, signal: AbortSignal) {
-        assertUnlockedRange(plan.drafts, index);
-        const draft = plan.drafts[index];
-        if (draft.edits.length < 2) { throw new Error(t('This draft contains only one indivisible change.')); }
-        return withProgress(signal, async (signal, report) => {
+        return this.runTask('split_commit_draft', plan.snapshot.scope, signal, async (signal, report, task) => {
+            assertUnlockedRange(plan.drafts, index);
+            const draft = plan.drafts[index];
+            if (draft.edits.length < 2) { throw new Error(t('This draft contains only one indivisible change.')); }
             const files = draftSource(plan.source, draft.edits);
-            const connection = await this.connect(signal);
+            const connection = await this.connect(signal, task);
             if (!connection) { return; }
             const { model, ask } = connection;
             const ctx = { model, convention: this.config.getPrompt(), files, guidance, previous: [draft], split: true };
@@ -173,13 +188,13 @@ export class Composition {
     }
 
     async reword(plan: Plan, index: number, signal: AbortSignal, onText?: (delta: string) => void) {
-        assertUnlockedRange(plan.drafts, index);
-        return withProgress(signal, async signal => {
+        return this.runTask('rewrite_commit_draft_message', plan.snapshot.scope, signal, async (signal, _report, task) => {
+            assertUnlockedRange(plan.drafts, index);
             const draft = plan.drafts[index];
-            const connection = await this.connect(signal);
+            const connection = await this.connect(signal, task);
             if (!connection) { return; }
             const request = messageRequest(connection.model, draft.files.map(f => f.patch).join(''), this.config.getPrompt());
-            const message = await connection.ask(request, onText);
+            const message = await connection.ask(request, { step: 'rewrite_message', attempt: 1 }, onText);
             if (!message.trim()) { throw new Error(t('Enter a commit message.')); }
             const drafts = [...plan.drafts];
             drafts[index] = { ...draft, message: message.trim() };
@@ -194,17 +209,18 @@ export class Composition {
         });
     }
 
-    private async connect(signal: AbortSignal): Promise<{ model: string; provider: string; baseUrl: string; ask: Ask } | undefined> {
+    private async connect(signal: AbortSignal, task: TaskLog): Promise<{ model: string; provider: string; baseUrl: string; ask: Ask } | undefined> {
         const vendor = await this.config.getBaseURLandSecrets();
         if (!vendor) { throw new Error(t('Smart Git Pilot: configure a provider first.')); }
         signal.throwIfAborted();
         const model = this.model || await this.selectModel();
-        if (!model || signal.aborted) { return; }
+        signal.throwIfAborted();
+        if (!model) { task.stop('skipped', 'model_not_selected'); return; }
         const adaptor = AdaptorFactory.create(vendor.provider as Venders, vendor.baseUrl, vendor.apiKey);
-        const ask: Ask = async (body, onText, onProgress) => {
+        const ask: Ask = async (body, context, onText, onProgress) => {
             signal.throwIfAborted();
-            const response = await adaptor.createMessage(body, signal, onText, onProgress);
-            logTokenUsage(response.usage, line => this.config.log(line));
+            const response = await task.modelCall({ provider: vendor.provider, model: body.model, ...context },
+                signal, () => adaptor.createMessage(body, signal, onText, onProgress));
             signal.throwIfAborted();
             return response.content.map(part => part.text).join('\n');
         };

@@ -241,6 +241,7 @@ suite('Commit model calls', () => {
             await git.run(['-c', 'commit.gpgSign=false', '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base']);
             const before = await git.headState();
             let splitModel = '', pickCount = 0;
+            const log: string[] = [];
             const composition = new Composition(git, {
                 getModel: (setting = 'model') => setting === 'composer.model' ? splitModel : 'ordinary-message-model',
                 setupModel: async setting => {
@@ -248,7 +249,7 @@ suite('Commit model calls', () => {
                     if (++pickCount === 1) { return; } // Dismiss the first picker.
                     return splitModel = 'gpt-6.1-sol';
                 },
-                getPrompt: () => 'Write a subject.', log() {},
+                getPrompt: () => 'Write a subject.', log: line => log.push(line),
                 getBaseURLandSecrets: async () => ({ provider: Venders.OpenAI, baseUrl, apiKey: 'test' }),
             });
             const signal = new AbortController().signal;
@@ -319,6 +320,19 @@ suite('Commit model calls', () => {
             assert.equal(reworded?.drafts[0].message, subject);
             assert.ok(requests.every(r => r.body.model === splitModel));
             assert.equal(pickCount, 2);
+            const events = log.map(line => JSON.parse(line));
+            const summaries = events.filter(event => event.event === 'task.finished');
+            assert.equal(new Set(summaries.map(event => event.taskId)).size, 6);
+            assert.deepEqual(summaries.map(event => [event.operation, event.status, event.modelCalls, event.totalTokens]), [
+                ['group_manually', 'completed', 0, 0], ['refine_commit_drafts', 'skipped', 0, 0],
+                ['generate_commit_drafts', 'completed', 1, 2745], ['generate_commit_drafts', 'completed', 3, 8235],
+                ['refine_commit_drafts', 'completed', 2, 5490], ['rewrite_commit_draft_message', 'completed', 1, 2745],
+            ]);
+            assert.deepEqual(events.filter(event => event.event === 'model.usage' && event.taskId === summaries[3].taskId)
+                .map(event => [event.call, event.step, event.attempt]), [[1, 'analyze_changes', 1], [2, 'group_drafts', 1], [3, 'order_drafts', 1]]);
+            assert.deepEqual(summaries[3].tokens, { uncachedInput: 8184, cacheWrite: 0, cacheRead: 0, output: 51 });
+            assert.deepEqual(events.filter(event => event.event === 'model.usage' && event.taskId === summaries[4].taskId)
+                .map(event => [event.call, event.step, event.attempt]), [[1, 'refine_drafts', 1], [2, 'refine_drafts', 2]]);
             await assert.rejects(applyPlan(git, revised, false));
             assert.deepEqual(await git.headState(), before);
             assert.equal(await git.text(['diff', '--cached']), '');

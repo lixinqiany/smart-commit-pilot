@@ -250,7 +250,7 @@ suite('Split commits', function () {
             '{"order":[2,1]}',
         ];
         const steps: string[] = [];
-        const result = await planGroups(ctx, { deep: true, instructions: [] }, async (_request, onText) => {
+        const result = await planGroups(ctx, { deep: true, instructions: [] }, async (_request, _context, onText) => {
             const raw = replies.shift()!;
             for (const ch of raw) { onText?.(ch); }
             return raw;
@@ -282,7 +282,7 @@ suite('Split commits', function () {
         const streamed: string[] = [];
         const progress: string[] = [];
         const preview = new DraftPreview(files, event => { if (event.type === 'append') { streamed.push(event.draft.message); } });
-        const result = await planGroups(ctx, { deep: true, instructions: [] }, async (_request, onText) => {
+        const result = await planGroups(ctx, { deep: true, instructions: [] }, async (_request, _context, onText) => {
             const reply = replies.shift()!;
             onText?.(reply);
             return reply;

@@ -19,7 +19,9 @@ export interface PlanningSession {
     analysis?: DraftIntent[];
     instructions: string[];
 }
-export type Ask = (request: MessageCreationRequest, onText?: (delta: string) => void, onProgress?: OnModelProgress) => Promise<string>;
+type ModelStep = 'analyze_changes' | 'group_drafts' | 'order_drafts' | 'refine_drafts' | 'repair_drafts' | 'rewrite_message';
+export type Ask = (request: MessageCreationRequest, context: { step: ModelStep; attempt: number },
+    onText?: (delta: string) => void, onProgress?: OnModelProgress) => Promise<string>;
 export interface PlannerContext {
     model: string;
     convention: string;
@@ -71,15 +73,15 @@ export function plannerRequest(ctx: PlannerContext, cache: boolean, task: string
 function json(raw: string) {
     return JSON.parse(raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1'));
 }
-async function decide<T>(ctx: PlannerContext, cache: boolean, ask: Ask, task: string, context: unknown,
+async function decide<T>(ctx: PlannerContext, cache: boolean, ask: Ask, step: ModelStep, task: string, context: unknown,
     parse: (raw: string) => T, onRetry?: () => void): Promise<T> {
-    const raw = await ask(plannerRequest(ctx, cache, task, context));
+    const raw = await ask(plannerRequest(ctx, cache, task, context), { step, attempt: 1 });
     try { return parse(raw); }
     catch (err) {
         if (!cache) { throw err; }
         onRetry?.();
         const correction = { context, invalidResponse: raw.slice(0, 8192), error: err instanceof Error ? err.message : String(err) };
-        return parse(await ask(plannerRequest(ctx, cache, task, correction)));
+        return parse(await ask(plannerRequest(ctx, cache, task, correction), { step, attempt: 2 }));
     }
 }
 function readAnalysis(raw: string, files: ChangedFile[]): DraftIntent[] {
@@ -113,7 +115,7 @@ export async function planGroups(ctx: PlannerContext, session: PlanningSession, 
     if (session.deep && mode === 'initial' && !analysis) {
         let step: DraftStep = 'analysis';
         report(l10n.t('Analyzing change purposes and dependencies…'), step);
-        analysis = await decide(ctx, true, ask,
+        analysis = await decide(ctx, true, ask, 'analyze_changes',
             [granularity, ctx.split ? 'Plan at least two drafts for the selected changes when feasible.' : '',
                 'Decide the commit boundaries now. Choose one distinct representative editable ID (anchorEdit) per draft. If another theme belongs in the same draft, name it in supportingThemes and give the concrete reason it belongs with that behavior. Shared files or dependencies alone do not justify merging.',
                 'Return {"drafts":[{"purpose":"...","anchorEdit":1,"paths":["..."],"dependsOn":["prerequisite purpose"],"supportingThemes":[{"purpose":"...","reason":"..."}]}]}. Omit supportingThemes when there are none.',
@@ -137,7 +139,7 @@ export async function planGroups(ctx: PlannerContext, session: PlanningSession, 
         l10n.t('Reusing the previous split plan ({0} drafts). Requesting draft groups…', session.analysis.length) : undefined;
     if (!preview) { report(reused ?? (mode === 'initial' ? l10n.t('Grouping changes…') : l10n.t('Updating unlocked drafts…'))); }
     let groupingStarted = false;
-    const groupRequest: Ask = preview ? request => {
+    const groupRequest: Ask = preview ? (request, context) => {
         const step = groupingStarted ? 'groupingRetry' : 'grouping';
         if (groupingStarted) { report(l10n.t('The model returned an invalid grouping.'), 'grouping'); }
         report(groupingStarted ? l10n.t('Retrying draft grouping…') :
@@ -146,7 +148,7 @@ export async function planGroups(ctx: PlannerContext, session: PlanningSession, 
         const read = preview.startResponse(anchors);
         let receiving = false;
         let lastProgress: ModelProgress | undefined;
-        return ask(request, delta => {
+        return ask(request, context, delta => {
             if (!receiving && delta.trim()) {
                 receiving = true;
                 report(l10n.t('Receiving draft groups…'), step);
@@ -164,7 +166,8 @@ export async function planGroups(ctx: PlannerContext, session: PlanningSession, 
         refine: 'Revise the existing drafts according to the new guidance. Preserve unrelated groupings and edited messages.',
         repair: 'Fix the reported intermediate errors by reordering drafts or moving the smallest necessary edits. Preserve each existing draft and its purpose.',
     };
-    const groups = await decide(ctx, session.deep || mode !== 'initial', groupRequest, [
+    const steps = { initial: 'group_drafts', refine: 'refine_drafts', repair: 'repair_drafts' } as const;
+    const groups = await decide(ctx, session.deep || mode !== 'initial', groupRequest, steps[mode], [
         tasks[mode],
         ctx.split ? 'Split the selected draft into at least two independently reviewable commits when feasible.' : '',
         anchors ? 'Output exactly one commit for each ID in requiredAnchorEdits. Each commit must include its own anchor and none of the others.' : '',
@@ -178,7 +181,7 @@ export async function planGroups(ctx: PlannerContext, session: PlanningSession, 
     let ordered = groups;
     if (session.deep && mode === 'initial' && groups.length > 1) {
         report(l10n.t('Ordering commits by dependency…'));
-        ordered = await decide(ctx, true, ask,
+        ordered = await decide(ctx, true, ask, 'order_drafts',
             'Order the numbered drafts so prerequisites precede callers, migrations and tests. Return {"order":[1,2]} using each 1-based draft number once. Do not regroup edits.',
             { analysis, drafts: compact(groups) }, raw => readOrder(raw, groups));
         preview?.sync(ordered);

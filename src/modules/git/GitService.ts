@@ -308,7 +308,7 @@ export class GitService {
                 cwd,
                 windowsHide: true,
                 signal,
-                stdio: ['pipe', 'pipe', 'pipe'],
+                stdio: [stdin.length > 0 ? 'pipe' : 'ignore', 'pipe', 'pipe'],
             });
             const stdout: Buffer[] = [];
             const stderr: Buffer[] = [];
@@ -323,7 +323,7 @@ export class GitService {
                 callback();
             };
 
-            child.stdout.on('data', (chunk: Buffer) => {
+            child.stdout?.on('data', (chunk: Buffer) => {
                 outputSize += chunk.length;
                 if (outputSize > maxOutputBytes) {
                     child.kill();
@@ -332,7 +332,7 @@ export class GitService {
                 }
                 stdout.push(chunk);
             });
-            child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+            child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
             child.on('error', (error) => finish(() => reject(error)));
             child.on('close', (code) => finish(() => {
                 if (code === 0) {
@@ -341,8 +341,10 @@ export class GitService {
                 }
                 reject(new Error(Buffer.concat(stderr).toString('utf8').trim() || `Git exited with code ${code}.`));
             }));
-            child.stdin.on('error', (error) => finish(() => reject(error)));
-            child.stdin.end(stdin);
+            if (child.stdin) {
+                child.stdin.on('error', (error) => finish(() => reject(error)));
+                child.stdin.end(stdin);
+            }
         });
     }
 }

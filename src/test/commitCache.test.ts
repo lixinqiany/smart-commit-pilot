@@ -1,5 +1,11 @@
 import * as assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { Composition } from '../modules/composer/Composition';
+import { ComposerGit } from '../modules/composer/git';
+import { applyPlan } from '../modules/composer/apply';
 import type { AddressInfo } from 'node:net';
 import * as vscode from 'vscode';
 import { AdaptorFactory } from '../modules/adaptor/AdaptorFactory';
@@ -109,6 +115,63 @@ suite('Commit message prompt caching', () => {
                     cache_control: { type: 'ephemeral' } }] }, { role: 'user', content: 'Group the edits' }]);
             }
         }
+    });
+
+    test('Composes, verifies and refines a real Git snapshot while preserving a locked diff', async function () {
+        this.timeout(60000);
+        const root = await mkdtemp(join(tmpdir(), 'pilot-workflow-'));
+        try {
+            const git = new ComposerGit(root, 'git');
+            await git.run(['init', '-q', '-b', 'main']);
+            await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, skipLibCheck: true, types: [] } }));
+            await writeFile(join(root, 'old.ts'), 'const oldProblem: string = 12;');
+            await git.run(['add', '.']);
+            await git.run(['-c', 'commit.gpgSign=false', '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base']);
+            const before = await git.headState();
+            const composition = new Composition(git, { getModel: () => 'gpt-6.1-sol', getPrompt: () => 'Write a subject.',
+                setupModel: async () => {}, log() {}, getBaseURLandSecrets: async () => ({ provider: Venders.OpenAI, baseUrl, apiKey: 'test' }) });
+            const signal = new AbortController().signal;
+            const groups = (...items: [string, number][]) => JSON.stringify({ commits: items.map(([message, id]) => ({ message, edits: [id] })) });
+            await writeFile(join(root, 'z.md'), 'Guide');
+            requests.length = 0;
+            replies = [groups(['docs', 1])];
+            const quick = await composition.start('working', '', false, signal);
+            assert.equal(requests.length, 1);
+            assert.equal(quick?.session?.deep, false);
+            assert.equal(JSON.stringify(requests[0].body).includes('prompt_cache_breakpoint'), false);
+
+            await writeFile(join(root, 'caller.ts'), "export { shared } from './shared';");
+            await writeFile(join(root, 'shared.ts'), 'export const shared = 1;');
+            requests.length = 0;
+            replies = [JSON.stringify({ concerns: [{ purpose: 'Extract helper', paths: ['shared.ts'], dependsOn: [] }] }),
+                groups(['caller', 1], ['helper', 2], ['docs', 3]), JSON.stringify({ order: [1, 2, 3] })];
+            const deep = await composition.start('working', 'Keep docs separate', false, signal);
+            assert.ok(deep);
+            assert.equal(requests.length, 3);
+            assert.deepEqual(deep.drafts.map(d => d.message), ['helper', 'caller', 'docs']);
+            for (const d of deep.drafts) {
+                assert.ok(d.check);
+                assert.ok(d.check.checks.includes('TypeScript'), d.check.skipped);
+                assert.deepEqual(d.check.issues, []);
+                assert.equal(d.check.existing, 1);
+            }
+            const prefix = (req: typeof requests[number]) => (req.body.input as unknown[])[0];
+            assert.deepEqual(requests.map(prefix), Array(3).fill(prefix(requests[0])));
+            deep.drafts[1].locked = true;
+            deep.drafts[1].message = 'My reviewed message';
+            await writeFile(join(root, 'later.md'), 'Outside the snapshot');
+            // A bad first reply tries to take a locked edit. The retry may only assign IDs 1..3 excluding 1.
+            replies = [groups(['steal', 1], ['helper', 2], ['docs', 3]), groups(['extract', 2], ['new docs title', 3])];
+            const revised = await composition.refine(deep, 'Improve the other messages', signal);
+            assert.ok(revised);
+            assert.equal(requests.length, 5);
+            assert.deepEqual(requests.map(prefix), Array(5).fill(prefix(requests[0])));
+            assert.deepEqual(revised.drafts[1], deep.drafts[1]);
+            assert.equal(revised.drafts[2].message, 'new docs title');
+            await assert.rejects(applyPlan(git, revised, false));
+            assert.deepEqual(await git.headState(), before);
+            assert.equal(await git.text(['diff', '--cached']), '');
+        } finally { await rm(root, { recursive: true, force: true }); }
     });
 
     test('Preserves default caching for calls that do not request one-off behavior', async () => {

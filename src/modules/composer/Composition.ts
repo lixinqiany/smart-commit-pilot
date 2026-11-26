@@ -34,8 +34,8 @@ async function withProgress<T>(signal: AbortSignal, run: (signal: AbortSignal, r
 
 export class Composition {
     constructor(private readonly git: ComposerGit, private readonly config: Pick<Configurator, 'getModel' | 'setupModel' | 'getPrompt' | 'getBaseURLandSecrets' | 'log'>) {}
-    get model(): string { return this.config.getModel(); }
-    selectModel(): Promise<void> { return this.config.setupModel(); }
+    get model(): string { return this.config.getModel('composer.model'); }
+    selectModel() { return this.config.setupModel('composer.model'); }
 
     async paths(scope: Scope): Promise<string[]> {
         const snapshot = await withScratch(dir => this.git.capture(scope, join(dir, 'index')));
@@ -53,8 +53,10 @@ export class Composition {
             if (manual) {
                 return validator.verify(await build([{ message: '', edits: files.flatMap(f => f.edits.map(e => e.id)) }]), report);
             }
-            const ctx = { model: this.model, convention: this.config.getPrompt(), files, guidance };
-            const ask = await this.connect(signal);
+            const connection = await this.connect(signal);
+            if (!connection) { return; }
+            const { model, ask } = connection;
+            const ctx = { model, convention: this.config.getPrompt(), files, guidance };
             const result = await planGroups(ctx, { deep: chooseDepth(files, depth), instructions: [] }, ask, report);
             return this.review(await build(result.groups), result.session, ctx, ask, validator, report);
         });
@@ -63,8 +65,10 @@ export class Composition {
     async refine(plan: Plan, guidance: string, signal: AbortSignal) {
         if (plan.drafts.every(d => d.locked)) { throw new Error(t('Unlock a draft to continue.')); }
         return withProgress(signal, async (signal, report) => {
-            const ctx = { model: this.model, convention: this.config.getPrompt(), files: plan.source, guidance, previous: plan.drafts };
-            const ask = await this.connect(signal);
+            const connection = await this.connect(signal);
+            if (!connection) { return; }
+            const { model, ask } = connection;
+            const ctx = { model, convention: this.config.getPrompt(), files: plan.source, guidance, previous: plan.drafts };
             const session = plan.session ?? { deep: chooseDepth(plan.source, 'auto'), instructions: [] };
             const result = await planGroups(ctx, session, ask, report, true, intermediateErrors(plan));
             const revised = await buildPlan(this.git, plan.snapshot, plan.source, result.groups);
@@ -105,8 +109,11 @@ export class Composition {
         if (draft.edits.length < 2) { throw new Error(t('This draft contains only one indivisible change.')); }
         return withProgress(signal, async (signal, report) => {
             const files = draftSource(plan.source, draft.edits);
-            const ctx = { model: this.model, convention: this.config.getPrompt(), files, guidance, previous: [draft], split: true };
-            const result = await planGroups(ctx, { deep: chooseDepth(files, 'auto'), instructions: [] }, await this.connect(signal), report);
+            const connection = await this.connect(signal);
+            if (!connection) { return; }
+            const { model, ask } = connection;
+            const ctx = { model, convention: this.config.getPrompt(), files, guidance, previous: [draft], split: true };
+            const result = await planGroups(ctx, { deep: chooseDepth(files, 'auto'), instructions: [] }, ask, report);
             if (result.groups.length < 2) { throw new Error(t('AI kept these changes together. Describe what to separate and try again.')); }
             const groups = [...plan.drafts.slice(0, index), ...result.groups, ...plan.drafts.slice(index + 1)];
             const updated = await buildPlan(this.git, plan.snapshot, plan.source, groups);
@@ -118,8 +125,9 @@ export class Composition {
         assertUnlockedRange(plan.drafts, index);
         return withProgress(signal, async signal => {
             const draft = plan.drafts[index];
-            const ask = await this.connect(signal);
-            const message = await ask(messageRequest(this.model, draft.files.map(f => f.patch).join(''), this.config.getPrompt()));
+            const connection = await this.connect(signal);
+            if (!connection) { return; }
+            const message = await connection.ask(messageRequest(connection.model, draft.files.map(f => f.patch).join(''), this.config.getPrompt()));
             if (!message.trim()) { throw new Error(t('Enter a commit message.')); }
             const drafts = [...plan.drafts];
             drafts[index] = { ...draft, message: message.trim() };
@@ -134,17 +142,21 @@ export class Composition {
         });
     }
 
-    private async connect(signal: AbortSignal): Promise<Ask> {
+    private async connect(signal: AbortSignal): Promise<{ model: string; ask: Ask } | undefined> {
         const vendor = await this.config.getBaseURLandSecrets();
-        if (!vendor || !this.model) { throw new Error(t('Configure a provider and select a model before splitting commits.')); }
+        if (!vendor) { throw new Error(t('Smart Git Pilot: configure a provider first.')); }
+        signal.throwIfAborted();
+        const model = this.model || await this.selectModel();
+        if (!model || signal.aborted) { return; }
         const adaptor = AdaptorFactory.create(vendor.provider as Venders, vendor.baseUrl, vendor.apiKey);
-        return async body => {
+        const ask: Ask = async body => {
             signal.throwIfAborted();
             const response = await adaptor.createMessage(body, signal);
             logTokenUsage(response.usage, line => this.config.log(line));
             signal.throwIfAborted();
             return response.content.map(part => part.text).join('\n');
         };
+        return { model, ask };
     }
 }
 

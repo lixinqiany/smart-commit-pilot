@@ -59,7 +59,7 @@ suite('Commit message prompt caching', () => {
         };
         const config = {
             getBaseURLandSecrets: async () => ({ provider, baseUrl, apiKey: 'test' }),
-            getModel: () => model,
+            getModel: (setting = 'model') => setting === 'model' ? model : 'split-test-model',
             getPrompt: () => 'Write a subject.',
             log: (line: string) => log.push(line),
         };
@@ -67,6 +67,7 @@ suite('Commit message prompt caching', () => {
         await new CommitGenerator(git, config).run();
         assert.equal(repo.inputBox.value, subject, log.join('\n'));
         assert.equal(requests.length, 1);
+        assert.equal(requests[0].body.model, model);
         return { ...requests[0], log };
     }
 
@@ -128,16 +129,33 @@ suite('Commit message prompt caching', () => {
             await git.run(['add', '.']);
             await git.run(['-c', 'commit.gpgSign=false', '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base']);
             const before = await git.headState();
-            const composition = new Composition(git, { getModel: () => 'gpt-6.1-sol', getPrompt: () => 'Write a subject.',
-                setupModel: async () => {}, log() {}, getBaseURLandSecrets: async () => ({ provider: Venders.OpenAI, baseUrl, apiKey: 'test' }) });
+            let splitModel = '', pickCount = 0;
+            const composition = new Composition(git, {
+                getModel: (setting = 'model') => setting === 'composer.model' ? splitModel : 'ordinary-message-model',
+                setupModel: async setting => {
+                    assert.equal(setting, 'composer.model');
+                    if (++pickCount === 1) { return; } // Dismiss the first picker.
+                    return splitModel = 'gpt-6.1-sol';
+                },
+                getPrompt: () => 'Write a subject.', log() {},
+                getBaseURLandSecrets: async () => ({ provider: Venders.OpenAI, baseUrl, apiKey: 'test' }),
+            });
             const signal = new AbortController().signal;
             const groups = (...items: [string, number][]) => JSON.stringify({ commits: items.map(([message, id]) => ({ message, edits: [id] })) });
             await writeFile(join(root, 'z.md'), 'Guide');
             requests.length = 0;
+            assert.equal(composition.model, '');
+            const manual = await composition.start('working', '', true, signal);
+            assert.ok(manual);
+            assert.equal(pickCount, 0);
+            assert.equal(await composition.refine(manual, '', signal), undefined);
+            assert.equal(requests.length, 0);
+            assert.equal(composition.model, '');
             replies = [groups(['docs', 1])];
             const quick = await composition.start('working', '', false, signal);
             assert.equal(requests.length, 1);
             assert.equal(quick?.session?.deep, false);
+            assert.equal(requests[0].body.model, splitModel);
             assert.equal(JSON.stringify(requests[0].body).includes('prompt_cache_breakpoint'), false);
 
             await writeFile(join(root, 'caller.ts'), "export { shared } from './shared';");
@@ -168,6 +186,10 @@ suite('Commit message prompt caching', () => {
             assert.deepEqual(requests.map(prefix), Array(5).fill(prefix(requests[0])));
             assert.deepEqual(revised.drafts[1], deep.drafts[1]);
             assert.equal(revised.drafts[2].message, 'new docs title');
+            const reworded = await composition.reword(revised, 0, signal);
+            assert.equal(reworded?.drafts[0].message, subject);
+            assert.ok(requests.every(r => r.body.model === splitModel));
+            assert.equal(pickCount, 2);
             await assert.rejects(applyPlan(git, revised, false));
             assert.deepEqual(await git.headState(), before);
             assert.equal(await git.text(['diff', '--cached']), '');

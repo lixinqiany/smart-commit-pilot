@@ -25,7 +25,12 @@ export class ReviewPanel {
         const resources = vscode.Uri.joinPath(extensionUri, 'media', 'composer');
         this.panel = vscode.window.createWebviewPanel('smartGitPilot.commitReview', t('Split changes into commits'),
             vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [resources] });
-        this.panel.onDidDispose(() => { this.lifetime.abort(); onClose(); });
+        const modelSetting = vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration('smartCommitPilot.composer.model')) {
+                void this.panel.webview.postMessage({ type: 'model', model: this.composition.model });
+            }
+        });
+        this.panel.onDidDispose(() => { this.lifetime.abort(); modelSetting.dispose(); onClose(); });
         this.panel.webview.onDidReceiveMessage(action => { void this.receive(action); });
         const web = this.panel.webview;
         const nonce = randomBytes(18).toString('base64');
@@ -81,7 +86,6 @@ export class ReviewPanel {
         try {
             if (action.type === 'model') {
                 await this.composition.selectModel();
-                if (!signal.aborted) { void this.panel.webview.postMessage({ type: 'model', model: this.composition.model }); }
                 return;
             }
             if (!this.plan) {

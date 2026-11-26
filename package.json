@@ -427,6 +427,11 @@
           "default": "",
           "description": "%settings.prompt%"
         },
+        "smartCommitPilot.composer.model": {
+          "type": "string",
+          "default": "",
+          "description": "%settings.composer.model%"
+        },
         "smartCommitPilot.model": {
           "type": "string",
           "default": "",

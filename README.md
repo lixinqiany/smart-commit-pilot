@@ -46,7 +46,7 @@ Open **Source Control → Smart Git Pilot**. Use the title icons to select local
 3. Click the **Generate Commit Message** icon in the Source Control panel's title bar.
 4. Review the generated message in the commit input box, edit if needed, and commit as usual.
 
-You can re-run **Setup Provider** or **Select Model** any time to switch providers or models.
+You can re-run **Setup Provider** or **Select Commit Message Model** any time to switch providers or models.
 
 ## Extension Settings
 
@@ -54,7 +54,8 @@ You can re-run **Setup Provider** or **Select Model** any time to switch provide
 |---|---|
 | `smartCommitPilot.provider` | Selected LLM vendor: `OpenAI` or `Anthropic`. |
 | `smartCommitPilot.baseUrl` | Base URL used to reach the selected provider (supports compatible proxies/gateways). |
-| `smartCommitPilot.model` | Model used to generate commit messages, chosen via **Select Model**. |
+| `smartCommitPilot.model` | Model used to generate commit messages, chosen via **Select Commit Message Model**. |
+| `smartCommitPilot.composer.model` | Model used for splitting commits and refining drafts, chosen in **Draft settings**. |
 | `smartCommitPilot.prompt` | Custom instructions appended to the commit-message prompt. Leave empty to use the built-in Conventional Commits template. |
 | `smartCommitPilot.blame.enabled` | Shows commit information for the current editor line. Enabled by default. |
 | `smartCommitPilot.blame.avatars` | Shows author avatars in branch history and blame hovers. Enabled by default. |
@@ -68,7 +69,7 @@ With avatars enabled, VS Code can request an image from GitHub for a GitHub nore
 | Command | What it does |
 |---|---|
 | `Smart Git Pilot: Setup Provider` | Configure provider, base URL, and API key; then prompts you to select a model. |
-| `Smart Git Pilot: Select Model` | Re-fetch and choose a model for the currently configured provider. |
+| `Smart Git Pilot: Select Commit Message Model` | Choose the model used by **Generate Commit Message**. |
 | `Smart Git Pilot: Setup Prompt` | Opens the `smartCommitPilot.prompt` instructions in a multi-line editor; save (Cmd/Ctrl+S) to apply. |
 | `Smart Git Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the icon in the Source Control title bar). |
 | `Smart Git Pilot: Split Changes into Commits…` | Review AI-grouped changes and edit each message before creating the commits. Available beside Generate Commit Message in Source Control, or with Ctrl+K Ctrl+Shift+G (Cmd+K Cmd+Shift+G on macOS). |

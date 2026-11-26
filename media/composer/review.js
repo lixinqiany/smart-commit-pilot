@@ -231,7 +231,7 @@ window.addEventListener('message', ({data}) => {
         scope.form.querySelector('input:checked').focus();
     }
     if (data.type === 'files') scope?.showFiles(data);
-    if (data.type === 'model') {
+    if (data.type === 'model' && model) {
         model.textContent = data.model || model.title;
         model.setAttribute('aria-label', model.title + (data.model ? ' · ' + data.model : ''));
     }

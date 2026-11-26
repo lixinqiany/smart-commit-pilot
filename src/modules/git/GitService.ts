@@ -31,6 +31,10 @@ export interface RemoteDeletionTarget {
     tip: string;
 }
 
+type ReportDeletion = (step: 'delete_remote_branch' | 'delete_local_branch', detail: {
+    status: 'deleted' | 'already_absent' | 'skipped' | 'blocked' | 'failed'; reason?: string;
+}) => void;
+
 // A fetch refspec can map a server branch into a differently named local tracking ref.
 function mapRef(ref: string, pattern: string, destination: string): string | undefined {
     const [prefix, suffix] = pattern.split('*');
@@ -254,35 +258,75 @@ export class GitService {
         return { branch, targets };
     }
 
-    async deleteLocalBranch(repo: Repository, plan: BranchDeletion, { force, target }: { force: boolean; target?: RemoteDeletionTarget }): Promise<void> {
+    async deleteLocalBranch(repo: Repository, plan: BranchDeletion, { force, target }: { force: boolean; target?: RemoteDeletionTarget },
+        report?: ReportDeletion): Promise<void> {
         const cwd = repo.rootUri.fsPath;
         const { branch, targets } = await this.getBranchDeletion(repo, plan.branch.ref);
         if (branch.tip !== plan.branch.tip || (target && !targets.some(t =>
             t.remote === target.remote && t.ref === target.ref && t.tip === target.tip))) {
             throw new Error(vscode.l10n.t('Branch or upstream changed. Review the deletion again.'));
         }
-        const deleteLocal = () => this.#runGit(cwd, ['branch', force ? '-D' : '-d', '--', branch.name]);
-        if (!target) {
-            await deleteLocal();
-            return;
+        const hasUnmergedCommits = async (...tips: string[]) =>
+            !!(await this.#runGit(cwd, ['rev-list', '-1', ...tips, '--not', 'HEAD', '--'])).trim();
+        let remoteStatus: 'deleted' | 'already_absent' | undefined;
+        if (target) {
+            const protectedCommits = !force && await hasUnmergedCommits(branch.tip, target.tip);
+            try {
+                remoteStatus = await this.deleteRemoteBranch(cwd, target, protectedCommits);
+            } catch (error) {
+                if (protectedCommits) {
+                    report?.('delete_remote_branch', { status: 'blocked', reason: 'unmerged_commits' });
+                    throw new Error(vscode.l10n.t('Merge both branches into HEAD first, or select force deletion.'));
+                }
+                report?.('delete_remote_branch', { status: 'failed' });
+                throw error;
+            }
+            report?.('delete_remote_branch', { status: remoteStatus });
+            if (protectedCommits && await hasUnmergedCommits(branch.tip)) {
+                report?.('delete_local_branch', { status: 'blocked', reason: 'unmerged_commits' });
+                throw new Error(vscode.l10n.t('The remote branch is already gone. Local branch {0} has commits outside the current branch. Select force deletion to delete it.', branch.name));
+            }
+        } else {
+            report?.('delete_remote_branch', { status: 'skipped', reason: 'local_only' });
         }
 
-        // The upstream cannot protect unmerged commits once both refs are removed.
-        if (!force && (await this.#runGit(cwd, ['rev-list', '-1', branch.tip, target.tip, '--not', 'HEAD', '--'])).trim()) {
-            throw new Error(vscode.l10n.t('Merge both branches into HEAD first, or select force deletion.'));
-        }
-        // Reject deletion if the server has moved since the displayed tracking ref was fetched.
-        await this.#runGit(cwd, ['push', '--no-follow-tags', '--force-with-lease=' + target.ref + ':' + target.tip,
-            '--', target.remote, ':' + target.ref]);
         try {
-            const tip = await this.#runGit(cwd, ['rev-parse', '--verify', branch.ref]);
-            if (tip.trim() !== branch.tip) {
+            if (target && (await this.#runGit(cwd, ['rev-parse', '--verify', branch.ref])).trim() !== branch.tip) {
                 throw new Error(vscode.l10n.t('Branch or upstream changed. Review the deletion again.'));
             }
-            await deleteLocal();
+            await this.#runGit(cwd, ['branch', force ? '-D' : '-d', '--', branch.name]);
         } catch (error) {
-            throw new Error(vscode.l10n.t('Remote branch {0} was deleted. Could not finish deleting local {1}. {2}',
-                target.remote + '/' + target.ref.slice('refs/heads/'.length), branch.name, error instanceof Error ? error.message : String(error)));
+            report?.('delete_local_branch', { status: 'failed' });
+            if (!target) { throw error; }
+            const remoteName = target.remote + '/' + target.ref.slice('refs/heads/'.length);
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(remoteStatus === 'already_absent'
+                ? vscode.l10n.t('Remote branch {0} was already gone. Could not finish deleting local {1}. {2}', remoteName, branch.name, message)
+                : vscode.l10n.t('Remote branch {0} was deleted. Could not finish deleting local {1}. {2}', remoteName, branch.name, message));
+        }
+        report?.('delete_local_branch', { status: 'deleted' });
+    }
+
+    private async deleteRemoteBranch(cwd: string, target: RemoteDeletionTarget, protectedCommits: boolean): Promise<'deleted' | 'already_absent'> {
+        const deleteRemote = (expectedTip: string) => this.#runGit(cwd, ['push', '--no-follow-tags',
+            '--force-with-lease=' + target.ref + ':' + expectedTip, '--', target.remote, ':' + target.ref]);
+        // When deleting the server ref would lose unmerged history, only accept an absent server ref.
+        if (protectedCommits) {
+            await deleteRemote('');
+            return 'already_absent';
+        }
+        try {
+            await deleteRemote(target.tip);
+            return 'deleted';
+        } catch (error) {
+            // A stale tracking ref can outlive a branch deleted on the server. The
+            // empty lease lets Git finish that no-op only if the server ref is absent.
+            try {
+                await deleteRemote('');
+                return 'already_absent';
+            } catch {
+                throw error;
+            }
         }
     }
 

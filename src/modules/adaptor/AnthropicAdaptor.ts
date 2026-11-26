@@ -1,11 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { MessageStream } from '@anthropic-ai/sdk/lib/MessageStream';
 import type { Message, MessageCreateParamsNonStreaming, MessageParam, TextBlock } from '@anthropic-ai/sdk/resources/messages';
-import { BaseAdaptor } from './BaseAdaptor';
+import { BaseAdaptor, OnModelProgress } from './BaseAdaptor';
 import { Venders } from '../configuration/configuration.constants';
 import { MessageCreationRequest, MessageContentList, MessageRole } from './unified-protocols/request';
 import { MessageCreationResponse, Usage } from './unified-protocols/response';
 
-export class AnthropicAdaptor extends BaseAdaptor {
+export class AnthropicAdaptor extends BaseAdaptor<MessageCreateParamsNonStreaming, Message> {
     readonly #client: Anthropic;
 
     constructor(baseURL: string, apiKey: string, provider: Venders) {
@@ -31,8 +32,22 @@ export class AnthropicAdaptor extends BaseAdaptor {
         };
     }
 
-    protected async send(request: MessageCreateParamsNonStreaming, signal?: AbortSignal): Promise<Message> {
+    protected sendBuffered(request: MessageCreateParamsNonStreaming, signal?: AbortSignal): Promise<Message> {
         return this.#client.messages.create(request, { signal });
+    }
+
+    protected async sendStream(request: MessageCreateParamsNonStreaming, signal: AbortSignal | undefined,
+        onText: (delta: string) => void, onProgress: OnModelProgress): Promise<Message> {
+        const { data, response } = await this.#client.messages.create({ ...request, stream: true }, { signal }).withResponse();
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('application/json')) {
+            onProgress('buffered');
+            return await response.json() as Message;
+        }
+        if (contentType?.includes('text/event-stream')) { onProgress('connected'); }
+        const stream = MessageStream.fromReadableStream(data.toReadableStream());
+        stream.on('text', onText);
+        return stream.finalMessage();
     }
 
     protected toUnifiedResponse(response: Message): MessageCreationResponse {
@@ -40,7 +55,7 @@ export class AnthropicAdaptor extends BaseAdaptor {
             .filter((block): block is TextBlock => block.type === 'text')
             .map((block) => ({ type: 'text' as const, text: block.text }));
 
-        const usage: Usage = {
+        const usage: Usage | null = response.usage ? {
             input_tokens: response.usage.input_tokens,
             input_tokens_details: {
                 cache_creation: response.usage.cache_creation,
@@ -51,7 +66,7 @@ export class AnthropicAdaptor extends BaseAdaptor {
             output_tokens_details: {
                 thinking_tokens: response.usage.output_tokens_details?.thinking_tokens ?? 0,
             },
-        };
+        } : null;
 
         return {
             id: response.id,

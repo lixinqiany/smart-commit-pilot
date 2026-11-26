@@ -48,7 +48,7 @@ function textEdits(diff: string, original: string[], updated: string[]): Edit[] 
     return edits;
 }
 
-export async function collectChanges(git: ComposerGit, snapshot: Snapshot): Promise<ChangedFile[]> {
+export async function collectChanges(git: ComposerGit, snapshot: Snapshot, signal?: AbortSignal): Promise<ChangedFile[]> {
     const args = ['diff-tree', '-r', '-z', '--raw', '--no-abbrev', '--find-renames', snapshot.base, snapshot.target];
     const raw = await git.run(args);
     const data = raw.toString('utf8');
@@ -57,6 +57,7 @@ export async function collectChanges(git: ComposerGit, snapshot: Snapshot): Prom
     const files: ChangedFile[] = [];
     let nextId = 1;
     for (let i = 0; i < parts.length && parts[i];) {
+        signal?.throwIfAborted();
         const [oldMode, newMode, oldOid, newOid, status] = parts[i++].slice(1).split(' ');
         const path = parts[i++];
         const newPath = status.startsWith('R') ? parts[i++] : path;

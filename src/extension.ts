@@ -35,7 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
 		blameRunner,
 		composer,
 		vscode.commands.registerCommand('smart-commit-pilot.composeCommits', (scm?: vscode.SourceControl) => composer.run(scm?.rootUri)),
-		new BranchesView(gitService, context.workspaceState),
+		new BranchesView(gitService, context.workspaceState, line => configurator.log(line)),
 		vscode.workspace.registerFileSystemProvider(
 			PromptFileSystemProvider.scheme,
 			new PromptFileSystemProvider(configurator),

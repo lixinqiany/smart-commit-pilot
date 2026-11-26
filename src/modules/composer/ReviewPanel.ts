@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { Composition } from './Composition';
+import { draftId, DraftProgress, DraftStatus, PreviewDraft } from './draftPreview';
+import type { Scope } from './git';
 import { isDraft, moveEdits, reorder } from './curation';
 import { reviewLabels, scopeLabels } from './labels';
 import { Plan } from './plan';
@@ -17,6 +19,8 @@ export class ReviewPanel {
     private busy = false;
     private revision = 0;
     private plan?: Plan;
+    private generationDuration?: number;
+    private generation?: { controller: AbortController; drafts: PreviewDraft[]; status: string; steps: DraftStatus[]; scope: Scope; startedAt: number };
     private readonly lifetime = new AbortController();
 
     constructor(extensionUri: vscode.Uri, private readonly heading: { product: string; repo: string; showRepo: boolean },
@@ -24,14 +28,18 @@ export class ReviewPanel {
         private readonly composition: Composition,
         private readonly commit: (plan: Plan) => Promise<void>, onClose: () => void) {
         const resources = vscode.Uri.joinPath(extensionUri, 'media', 'composer');
-        this.panel = vscode.window.createWebviewPanel('smartGitPilot.commitReview', t('Split changes into commits'),
+        this.panel = vscode.window.createWebviewPanel('smartGitPilot.commitReview', 'Composer',
             vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [resources] });
+        this.panel.iconPath = {
+            light: vscode.Uri.joinPath(extensionUri, 'images', 'composer-light.svg'),
+            dark: vscode.Uri.joinPath(extensionUri, 'images', 'composer-dark.svg'),
+        };
         const modelSetting = vscode.workspace.onDidChangeConfiguration(event => {
             if (event.affectsConfiguration('smartCommitPilot.composer.model')) {
                 void this.panel.webview.postMessage({ type: 'model', model: this.composition.model });
             }
         });
-        this.panel.onDidDispose(() => { this.lifetime.abort(); modelSetting.dispose(); onClose(); });
+        this.panel.onDidDispose(() => { this.lifetime.abort(); this.generation?.controller.abort(); modelSetting.dispose(); onClose(); });
         this.panel.webview.onDidReceiveMessage(action => { void this.receive(action); });
         const web = this.panel.webview;
         const nonce = randomBytes(18).toString('base64');
@@ -45,24 +53,59 @@ export class ReviewPanel {
     reveal(): void { this.panel.reveal(); }
     dispose(): void { this.panel.dispose(); }
 
+    private panelContext() {
+        return { model: this.composition.model, product: this.heading.product, repo: this.heading.showRepo ? this.heading.repo : undefined };
+    }
+
+    private scopeTitle(scope: Scope): string {
+        return scope === 'working' ? t('All saved changes') : t('Staged changes');
+    }
+
     private show(active = 0): void {
-        const model = this.composition.model;
-        const context = { product: this.heading.product, repo: this.heading.showRepo ? this.heading.repo : undefined };
         if (!this.plan) {
             const choices = [
                 { scope: 'staged', title: t('Staged changes'), detail: t('Changes selected with + or git add.') },
                 { scope: 'working', title: t('All saved changes'),
                     detail: t('Includes staged edits, unstaged edits and new files Git can track.') },
             ];
-            void this.panel.webview.postMessage({ type: 'scopes', ...context, model, labels: scopeLabels(),
+            void this.panel.webview.postMessage({ type: 'scopes', ...this.panelContext(), labels: scopeLabels(),
                 choices: this.stagedFirst ? choices : choices.reverse() });
+            this.showGeneration();
             return;
         }
-        this.panel.title = t('Review split commits');
-        void this.panel.webview.postMessage({ type: 'plan', ...context, model, revision: ++this.revision, active, warning: this.plan.warning,
-            scope: this.plan.snapshot.scope === 'working' ? t('All saved changes') : t('Staged changes'),
-            drafts: this.plan.drafts.map(({ message, files, edits, locked, check }) => ({ message, files, locked, check, canSplit: edits.length > 1 })),
+        void this.panel.webview.postMessage({ type: 'plan', ...this.panelContext(), revision: ++this.revision, active, warning: this.plan.warning,
+            scope: this.scopeTitle(this.plan.snapshot.scope), elapsedMs: this.generationDuration,
+            drafts: this.plan.drafts.map(({ message, files, edits, locked, check }) =>
+                ({ id: draftId(edits), message, files, locked, check, canSplit: edits.length > 1 })),
             labels: reviewLabels(this.plan.drafts.length) });
+    }
+
+    private showGeneration(): void {
+        if (this.generation) {
+            const { status, steps, drafts, scope, startedAt } = this.generation;
+            void this.panel.webview.postMessage({ type: 'generation', ...this.panelContext(),
+                status, steps, drafts, startedAt, elapsedMs: performance.now() - startedAt, scope: this.scopeTitle(scope), labels: reviewLabels() });
+        }
+    }
+
+    private progress(event: DraftProgress): void {
+        const generation = this.generation;
+        if (!generation || generation.controller.signal.aborted) { return; }
+        if (event.type === 'status') {
+            generation.status = event.text;
+            if (event.step && !generation.drafts.length && generation.steps.at(-1)?.text !== event.text) {
+                generation.steps.push(event);
+            }
+        }
+        if (event.type === 'append') { generation.drafts.push(event.draft); }
+        if (event.type === 'diff') { generation.drafts[event.index].files = event.files; }
+        if (event.type === 'replace') { generation.drafts = event.drafts; }
+        if (event.type === 'check') {
+            const draft = generation.drafts[event.index];
+            draft.checking = !event.result;
+            draft.check = event.result;
+        }
+        void this.panel.webview.postMessage({ type: 'progress', event });
     }
 
     private display(plan: Plan | undefined, active = 0): void {
@@ -73,6 +116,7 @@ export class ReviewPanel {
         const signal = this.lifetime.signal;
         if (!action || signal.aborted) { return; }
         if (action.type === 'ready') { this.show(); return; }
+        if (action.type === 'stopGeneration') { this.generation?.controller.abort(); return; }
         if (action.type === 'cancel' && !this.plan) { this.dispose(); return; }
         if (!this.plan && action.type === 'files' && (action.scope === 'working' || action.scope === 'staged')) {
             try {
@@ -93,8 +137,21 @@ export class ReviewPanel {
             if (!this.plan) {
                 if ((action.type !== 'choose' && action.type !== 'manual') ||
                     (action.scope !== 'staged' && action.scope !== 'working') || typeof action.guidance !== 'string') { return; }
-                this.display(await this.composition.start(action.scope, action.guidance, action.type === 'manual', signal,
-                    action.depth === 'deep' || action.depth === 'quick' ? action.depth : 'auto'));
+                const depth = action.depth === 'deep' || action.depth === 'quick' ? action.depth : 'auto';
+                if (action.type === 'manual') {
+                    this.display(await this.composition.start(action.scope, action.guidance, true, signal, depth));
+                } else {
+                    const controller = new AbortController();
+                    const startedAt = performance.now();
+                    this.generation = { controller, drafts: [], status: t('Reading selected changes…'), steps: [], scope: action.scope, startedAt };
+                    this.showGeneration();
+                    const plan = await this.composition.start(action.scope, action.guidance, false, controller.signal, depth,
+                        event => this.progress(event));
+                    if (plan && !controller.signal.aborted) {
+                        this.generationDuration = performance.now() - startedAt;
+                        this.display(plan);
+                    }
+                }
                 return;
             }
             if (action.revision !== this.revision) { return; }
@@ -122,7 +179,12 @@ export class ReviewPanel {
                     this.display(await this.composition.split(plan, from, guidance, signal), from);
                 }
             } else if (action.type === 'reword') {
-                this.display(await this.composition.reword(plan, from, signal), from);
+                const updated = await this.composition.reword(plan, from, signal, delta => {
+                    if (!signal.aborted) {
+                        void this.panel.webview.postMessage({ type: 'rewordText', revision: action.revision, index: from, delta });
+                    }
+                });
+                this.display(updated, from);
             } else if (action.type === 'reorder' && isDraft(plan.drafts, action.to)) {
                 this.display(await this.composition.rebuild(plan, reorder(plan, from, action.to), signal), action.to);
             } else if (action.type === 'move' && Array.isArray(action.edits) && action.edits.every(Number.isSafeInteger)) {
@@ -136,6 +198,7 @@ export class ReviewPanel {
                 void this.panel.webview.postMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
             }
         } finally {
+            this.generation = undefined;
             this.busy = false;
             if (!signal.aborted) { void this.panel.webview.postMessage({ type: 'idle' }); }
         }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ComposerGit, Scope, withScratch } from '../modules/composer/git';
 import { collectChanges } from '../modules/composer/changes';
+import { DraftPreview, DraftProgress } from '../modules/composer/draftPreview';
 import { buildPlan, parseGroups } from '../modules/composer/plan';
 import { draftSource, mergeUnlocked, moveEdits, reorder } from '../modules/composer/curation';
 import { chooseDepth, plannerRequest, planGroups } from '../modules/composer/planner';
@@ -39,6 +40,9 @@ suite('Split commits', function () {
     async function source(scope: Scope) {
         const snapshot = await withScratch(dir => git.capture(scope, join(dir, 'index')));
         return { snapshot, files: await collectChanges(git, snapshot) };
+    }
+    function intent(purpose: string, anchorEdit: number) {
+        return { purpose, anchorEdit, paths: [], dependsOn: [] };
     }
     async function pair() {
         const { snapshot, files } = await source('staged');
@@ -216,7 +220,7 @@ suite('Split commits', function () {
         assert.equal(chooseDepth(files, 'deep'), true);
         const ctx = { files, model: 'model', convention: '', guidance: '' };
         const replies = [
-            '{"concerns":[{"purpose":"purpose","paths":["a"],"dependsOn":[]}]}',
+            JSON.stringify({ drafts: [intent('A', 1), intent('B', 2)] }),
             '{"commits":[{"message":"A","edits":[1]},{"message":"B","edits":[2]}]}',
             '{"order":[2,2]}', '{"order":[2,1]}',
         ];
@@ -228,6 +232,87 @@ suite('Split commits', function () {
         }, () => {});
         assert.equal(requests.length, 4);
         assert.deepEqual(result.groups.map(g => g.message), ['B','A']);
+    });
+
+    test('Discards an incomplete preview on retry and reconciles the final dependency order', async () => {
+        for (const path of ['a', 'b']) { await writeFile(join(root, path), path); }
+        const { files } = await source('working');
+        const events: DraftProgress[] = [];
+        const preview = new DraftPreview(files, event => events.push(event));
+        const ctx = { files, model: 'model', convention: '', guidance: '' };
+        const replies = [
+            '{}',
+            JSON.stringify({ drafts: [
+                { ...intent('A', 1), supportingThemes: [{ purpose: 'Tests', reason: 'They verify A.' }] }, intent('B', 2),
+            ] }),
+            '{"commits":[{"message":"Rejected","edits":[1]},{"message":"Overlap","edits":[1]}]}',
+            '{"commits":[{"message":"A","edits":[1]},{"message":"B","edits":[2]}]}',
+            '{"order":[2,1]}',
+        ];
+        const steps: string[] = [];
+        const result = await planGroups(ctx, { deep: true, instructions: [] }, async (_request, _context, onText) => {
+            const raw = replies.shift()!;
+            for (const ch of raw) { onText?.(ch); }
+            return raw;
+        }, (_message, step) => {
+            if (step && steps.at(-1) !== step) { steps.push(step); }
+        }, { preview });
+        assert.deepEqual(steps, ['analysis', 'analysisRetry', 'grouping', 'groupingRetry']);
+        assert.equal(replies.length, 0);
+        assert.equal(result.session.analysis?.length, 2);
+        assert.deepEqual(result.groups.map(group => group.message), ['B', 'A']);
+        assert.deepEqual(events.map(event => event.type === 'append' ? event.draft.message :
+            event.type === 'replace' ? event.drafts.map(d => d.message) : event.type), ['Rejected', [], 'A', 'B', ['B','A']]);
+    });
+
+    test('Keeps five planned purposes distinct when the grouping model attempts to collapse them into two drafts', async () => {
+        const purposes = ['Transport', 'Settings', 'Blame', 'Branches', 'Splitting'];
+        for (const path of ['a','b','c','d','e','f']) { await writeFile(join(root, path), path); }
+        const { files, snapshot } = await source('working');
+        const ctx = { files, model: 'model', convention: '', guidance: '' };
+        const drafts = purposes.map((purpose, i) => intent(purpose, i + 1));
+        const groups = purposes.map((message, i) => ({ message, edits: i === 0 ? [1, 6] : [i + 1] }));
+        const replies = [
+            JSON.stringify({ drafts: [{ ...drafts[0], supportingThemes: [{ purpose: 'Transport tests' }] }, ...drafts.slice(1)] }),
+            JSON.stringify({ drafts: [{ ...drafts[0], supportingThemes: [{ purpose: 'Transport tests', reason: 'They verify the transport.' }] }, ...drafts.slice(1)] }),
+            JSON.stringify({ commits: [{ message: 'All features', edits: ['1-4'] }, { message: 'The rest', edits: [5, 6] }] }),
+            JSON.stringify({ commits: groups }),
+            JSON.stringify({ order: [1, 2, 3, 4, 5] }),
+        ];
+        const streamed: string[] = [];
+        const progress: string[] = [];
+        const preview = new DraftPreview(files, event => { if (event.type === 'append') { streamed.push(event.draft.message); } });
+        const result = await planGroups(ctx, { deep: true, instructions: [] }, async (_request, _context, onText) => {
+            const reply = replies.shift()!;
+            onText?.(reply);
+            return reply;
+        }, message => progress.push(message), { preview });
+        assert.deepEqual(streamed, purposes);
+        assert.deepEqual(result.groups, groups);
+        assert.ok(progress.some(text => text.includes('6') && text.includes('5')));
+        assert.equal(replies.length, 0);
+        const plan = await buildPlan(git, snapshot, files, result.groups);
+        assert.equal(plan.drafts.at(-1)?.tree, snapshot.target);
+    });
+
+    test('Automatic repair preserves current unlocked drafts while explicit refinement can merge them', async () => {
+        for (const path of ['a','b','c','d']) { await writeFile(join(root, path), path); }
+        const { files } = await source('working');
+        const previous = [
+            { message: 'Lock', edits: [1], locked: true },
+            { message: 'Feature', edits: [2, 4] }, { message: 'Fix', edits: [3] },
+        ];
+        const ctx = { files, previous, model: 'model', convention: '', guidance: '' };
+        // A manual split since analysis created the separate Fix draft.
+        const session = { deep: true, instructions: [], analysis: [intent('Lock', 1), intent('Feature', 2)] };
+        const merged = { message: 'Together', edits: [2, 3, 4] };
+        const answer = async () => JSON.stringify({ commits: [merged] });
+        await assert.rejects(planGroups(ctx, session, answer, () => {}, { mode: 'repair', feedback: ['Missing dependency'] }));
+        const adjusted = [{ message: 'Fix', edits: [3, 4] }, { message: 'Feature', edits: [2] }];
+        const repaired = await planGroups(ctx, session, async () => JSON.stringify({ commits: adjusted }), () => {}, { mode: 'repair' });
+        assert.deepEqual(repaired.groups, [previous[0], ...adjusted]);
+        const refined = await planGroups({ ...ctx, guidance: 'Merge the two unlocked drafts' }, session, answer, () => {}, { mode: 'refine' });
+        assert.deepEqual(refined.groups, [previous[0], merged]);
     });
 
     test('Shows a broken intermediate manifest even when the complete tree is correct', async () => {

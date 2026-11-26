@@ -1,5 +1,5 @@
 import { el, button } from './controls.js';
-import { verification, reviewActions } from './feedback.js';
+import { generationProgress, verification, reviewActions } from './feedback.js';
 import { disclosure, icon, settingsTool } from './panel-tools.js';
 import { scopeView } from './scope.js';
 import { fileDiff } from './diff.js';
@@ -8,7 +8,9 @@ import { changeSelection } from './selection.js';
 const vscode = acquireVsCodeApi();
 const root = document.getElementById('review');
 let plan, active = 0, busy = false, scope, model, nav, detail, actions, alert, pending;
-let selection, dragging, dropNew, move;
+let selection, dragging, dropNew, move, rewordPreview = '';
+let reviewSettings, draftCount, generation;
+const fileCount = draft => draft.files?.length ?? draft.paths.length;
 const subject = draft => draft.message.trim().split('\n')[0] || plan.labels.unnamed;
 
 function send(type, fields = {}) {
@@ -23,7 +25,8 @@ function send(type, fields = {}) {
         messages: plan?.drafts.map(d => d.message), ...fields});
 }
 function updateControls() {
-    root.setAttribute('aria-busy', String(busy));
+    root.setAttribute('aria-busy', String(busy && !generation));
+    if (generation) return;
     if (scope) {
         scope.setBusy(busy);
         return;
@@ -41,7 +44,7 @@ function errorBox() {
     alert.hidden = true;
     return alert;
 }
-function select(index, focus = false) {
+function select(index, focus = false, previousDetail) {
     active = index;
     selection = changeSelection(updateControls);
     nav.querySelectorAll('.draft').forEach((row, i) => {
@@ -49,7 +52,7 @@ function select(index, focus = false) {
         row.tabIndex = i === index ? 0 : -1;
         if (focus && i === index) row.focus();
     });
-    renderDetail();
+    renderDetail(previousDetail);
     updateControls();
 }
 function drag(node, payload) {
@@ -88,23 +91,47 @@ function drop(node, to) {
         send(payload.type, {...payload, to});
     });
 }
+function draftCheckText(draft) {
+    const l = plan.labels;
+    if (draft.check?.issues.length) return l.issues + ' · ' + draft.check.issues.length;
+    if (draft.check?.skipped) return l.checkIncomplete;
+    if (draft.check) return l.checked;
+    if (generation) return draft.checking ? l.checking : l.pendingCheck;
+    return '';
+}
+function updateDraftCheck(row, draft) {
+    const text = draftCheckText(draft);
+    const status = row.querySelector('.draft-check-state');
+    status.textContent = text ? ' · ' + text : '';
+    status.hidden = !text;
+    row.classList.toggle('has-issues', Boolean(draft.check?.issues.length || draft.check?.skipped));
+}
+function draftVerification(draft) {
+    if (!draft.check && generation) return el('div', 'verification', draftCheckText(draft));
+    return verification(draft.check, plan.labels);
+}
+
 function navRow(draft, index) {
     const row = button('', 'draft', () => select(index));
-    row.title = draft.locked ? plan.labels.locked : plan.labels.dragDraft;
+    if (!generation) row.title = draft.locked ? plan.labels.locked : plan.labels.dragDraft;
     const copy = el('span', 'draft-copy');
-    const meta = el('span', 'meta', plan.labels.files + ' · ' + draft.files.length);
+    const meta = el('span', 'meta');
+    meta.append(el('span', 'draft-file-count', plan.labels.files + ' · ' + fileCount(draft)));
     if (draft.locked) meta.append(' · ', el('span', 'lock-state', plan.labels.locked));
+    meta.append(el('span', 'draft-check-state'));
     copy.append(el('span', 'subject', subject(draft)), meta);
-    if (draft.check?.issues.length || draft.check?.skipped) row.classList.add('has-issues');
     row.append(el('span', 'ordinal', String(index + 1)), copy);
+    updateDraftCheck(row, draft);
     row.addEventListener('keydown', event => {
         const delta = {ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1}[event.key];
-        if (!delta || busy) return;
+        if (!delta || (busy && !generation)) return;
         event.preventDefault();
         select((index + delta + plan.drafts.length) % plan.drafts.length, true);
     });
-    if (!draft.locked) drag(row, () => ({type: 'reorder', from: index}));
-    drop(row, index);
+    if (!generation) {
+        if (!draft.locked) drag(row, () => ({type: 'reorder', from: index}));
+        drop(row, index);
+    }
     return row;
 }
 function draftMenu(labels) {
@@ -123,39 +150,68 @@ function draftMenu(labels) {
     action(labels.later, 'reorder', free && active + 1 < plan.drafts.length && !plan.drafts[active + 1].locked, {to: active + 1});
     return tool.root;
 }
-function renderDetail() {
+function saveDetail() {
+    const openFiles = new Map([...detail.querySelectorAll('.file[data-path]')].map(file => [file.dataset.path, file.open]));
+    return {openFiles, scrollTop: detail.scrollTop};
+}
+function renderDetail(previousDetail) {
     const draft = plan.drafts[active], l = plan.labels;
     detail.replaceChildren();
+    if (!draft) return;
+
     const head = el('div', 'detail-head');
-    const lock = button(draft.locked ? l.unlock : l.lock, 'lock-draft with-icon', () => send('lock'));
-    lock.prepend(icon(draft.locked ? 'lock' : 'unlock'));
-    lock.title = l.lockHint;
-    lock.setAttribute('aria-pressed', String(!!draft.locked));
-    head.append(el('h2', '', l.message), lock, draftMenu(l));
+    head.append(el('h2', '', l.message));
+    if (!generation) {
+        const lock = button(draft.locked ? l.unlock : l.lock, 'lock-draft with-icon', () => send('lock'));
+        lock.prepend(icon(draft.locked ? 'lock' : 'unlock'));
+        lock.title = l.lockHint;
+        lock.setAttribute('aria-pressed', String(!!draft.locked));
+        head.append(lock, draftMenu(l));
+    }
     const input = el('textarea', 'message');
     input.setAttribute('aria-label', l.message);
     input.placeholder = l.empty;
     input.rows = Math.min(9, Math.max(3, draft.message.split('\n').length));
     input.value = draft.message;
-    input.readOnly = !!draft.locked;
+    input.readOnly = !!generation || !!draft.locked;
     input.addEventListener('input', () => {
         draft.message = input.value;
-        nav.querySelectorAll('.subject')[active].textContent = subject(draft);
+        nav.children[active].querySelector('.subject').textContent = subject(draft);
         updateControls();
     });
     const bar = el('div', 'changes-head');
-    move = button(l.move, 'text-button', () => send('move', {edits: [...selection.ids]}));
     const fileActions = el('div', 'file-actions');
-    fileActions.append(move);
-    bar.append(el('h3', '', l.changes), el('span', 'count', draft.files.length), fileActions);
+    if (!generation) {
+        move = button(l.move, 'text-button', () => send('move', {edits: [...selection.ids]}));
+        fileActions.append(move);
+    }
+    bar.append(el('h3', '', l.changes), el('span', 'count', fileCount(draft)), fileActions);
+    detail.append(head, input, draftVerification(draft), bar);
+    if (!draft.files) {
+        const paths = el('ul', 'preview-paths');
+        paths.append(...draft.paths.map(path => el('li', '', path)));
+        detail.append(paths);
+        detail.scrollTop = 0;
+        return;
+    }
+
     const files = el('div', 'files');
     for (const [i, file] of draft.files.entries()) {
+        const editable = !generation;
+        const diff = fileDiff(file, previousDetail?.openFiles.get(file.path) ?? i === 0, l,
+            editable && !draft.locked ? selection : undefined);
+        diff.dataset.path = file.path;
+        if (!editable) {
+            files.append(diff);
+            continue;
+        }
         const box = el('div', 'file-box');
         const check = selection.checkbox(file.ids, l.selectFiles + ' · ' + file.path, 'file-select');
-        const diff = fileDiff(file, i === 0, l, draft.locked ? undefined : selection);
         const summary = diff.querySelector('summary');
-        if (!draft.locked) summary.title = l.dragFile;
-        if (!draft.locked) drag(summary, () => ({type: 'move', from: active, edits: file.ids.some(id => selection.ids.has(id)) ? [...selection.ids] : file.ids}));
+        if (!draft.locked) {
+            summary.title = l.dragFile;
+            drag(summary, () => ({type: 'move', from: active, edits: file.ids.some(id => selection.ids.has(id)) ? [...selection.ids] : file.ids}));
+        }
         box.append(check, diff);
         files.append(box);
     }
@@ -170,57 +226,187 @@ function renderDetail() {
         files.addEventListener('toggle', sync, true);
         fileActions.append(toggle);
     }
-    detail.append(head, input, verification(draft.check, l), bar, files);
-    detail.scrollTop = 0;
+    detail.append(files);
+    detail.scrollTop = previousDetail?.scrollTop ?? 0;
 }
-function renderPlan(data) {
-    scope = undefined;
-    plan = data;
-    busy = false;
-    const l = plan.labels;
-    root.classList.remove('choosing-scope');
+function renderLayout(data, footer) {
+    const l = data.labels;
+    root.classList.remove('choosing-scope', 'waiting-for-draft');
     const header = el('header');
     const title = el('div', 'heading');
-    title.append(el('h1', '', l.title), el('div', 'repo', [plan.product, plan.repo, plan.scope].filter(Boolean).join(' · ')));
-    const settings = settingsTool(plan, () => send('model'));
+    title.append(el('h1', '', l.title), el('div', 'repo', [data.product, data.repo, data.scope].filter(Boolean).join(' · ')));
+    const settings = settingsTool(data, () => send('model'));
+    reviewSettings = settings.root;
+    reviewSettings.hidden = !!generation;
     model = settings.model;
-    header.append(title, settings.root);
+    header.append(title, reviewSettings);
+
     const layout = el('div', 'layout');
     const sidebar = el('aside');
     const heading = el('div', 'section-title');
-    heading.append(el('h2', '', l.sequence), el('span', 'count', plan.drafts.length));
+    draftCount = el('span', 'count');
+    heading.append(el('h2', '', l.sequence), draftCount);
     nav = el('nav');
     nav.setAttribute('aria-label', l.sequence);
-    nav.append(...plan.drafts.map(navRow));
     dropNew = el('div', 'new-draft-target', l.newDraft);
     dropNew.hidden = true;
     drop(dropNew, 'new');
     sidebar.append(heading, nav, dropNew);
     detail = el('section', 'detail');
     layout.append(sidebar, detail);
-    actions = reviewActions(l, send, pending === 'refine' ? undefined : actions?.state);
-    root.replaceChildren(header, layout, errorBox(), actions.root);
+    root.replaceChildren(header, layout, errorBox(), footer);
+}
+function showDrafts(index, focus, previousDetail) {
+    draftCount.textContent = String(plan.drafts.length);
+    nav.replaceChildren(...plan.drafts.map(navRow));
+    select(index, focus, previousDetail);
+}
+function renderPlan(data) {
+    const fromGeneration = generation?.reviewing;
+    const previousActions = pending === 'refine' ? undefined : actions?.state;
+    const selectedId = fromGeneration ? plan.drafts[active]?.id : undefined;
+    const sameDraft = selectedId === undefined ? -1 : data.drafts.findIndex(draft => draft.id === selectedId);
+    const previousDetail = sameDraft < 0 ? undefined : saveDetail();
+    generation?.dispose();
+    generation = undefined;
+    scope = undefined;
+    plan = data;
+    busy = false;
+    actions = reviewActions(data.labels, send, fromGeneration ? undefined : previousActions, data.elapsedMs);
+    if (fromGeneration) {
+        root.querySelector('footer').replaceWith(actions.root);
+        reviewSettings.hidden = false;
+    } else {
+        renderLayout(data, actions.root);
+    }
     if (data.warning) { alert.textContent = data.warning; alert.hidden = false; }
-    select(data.active, true);
+    showDrafts(sameDraft < 0 ? data.active : sameDraft, true, previousDetail);
+}
+function showWaiting(labels) {
+    generation = generationProgress(labels, () => vscode.postMessage({type: 'stopGeneration'}));
+    generation.setStatus(labels.readingChanges, 'changes', 0);
+    const panel = el('section', 'generation-waiting');
+    const card = el('div', 'generation-waiting-card');
+    card.append(el('h1', '', labels.progressTitle), generation.trace, generation.root);
+    panel.append(card);
+    root.classList.remove('choosing-scope');
+    root.classList.add('waiting-for-draft');
+    root.replaceChildren(panel, alert);
+    updateControls();
+    generation.cancel.focus({preventScroll: true});
+}
+function showGeneratingReview() {
+    if (generation.reviewing || generation.cancel.disabled || !plan.drafts.length) return;
+    generation.reviewing = true;
+    const restoreFocus = document.activeElement === generation.cancel;
+    const footer = el('footer', 'generation-footer');
+    footer.append(generation.root);
+    renderLayout(plan, footer);
+    showDrafts(0, false);
+    if (restoreFocus) generation.cancel.focus({preventScroll: true});
+}
+function startGeneration(data) {
+    plan = data;
+    busy = true;
+    if (!generation) showWaiting(data.labels);
+    generation.syncElapsed(data.elapsedMs);
+    for (const status of data.steps ?? []) generation.setStatus(status.text, status.step, status.at - data.startedAt);
+    generation.setStatus(data.status);
+    showGeneratingReview();
+}
+function updateGeneration(event) {
+    if (event.type === 'status') {
+        generation.setStatus(event.text, event.step, plan ? event.at - plan.startedAt : undefined);
+    } else if (event.type === 'append') {
+        const index = plan.drafts.length;
+        plan.drafts.push(event.draft);
+        if (!generation.reviewing) {
+            showGeneratingReview();
+            return;
+        }
+        const row = navRow(event.draft, index);
+        row.tabIndex = -1;
+        nav.append(row);
+        draftCount.textContent = String(plan.drafts.length);
+        if (!index) select(0);
+    } else if (event.type === 'diff') {
+        const draft = plan.drafts[event.index];
+        draft.files = event.files;
+        nav.children[event.index].querySelector('.draft-file-count').textContent = plan.labels.files + ' · ' + fileCount(draft);
+        if (event.index === active) renderDetail(saveDetail());
+    } else if (event.type === 'check') {
+        const draft = plan.drafts[event.index];
+        draft.checking = !event.result;
+        draft.check = event.result;
+        updateDraftCheck(nav.children[event.index], draft);
+        if (event.index === active) detail.querySelector('.verification').replaceWith(draftVerification(draft));
+    } else if (event.type === 'replace') {
+        if (!generation.reviewing) {
+            plan.drafts = event.drafts;
+            showGeneratingReview();
+            return;
+        }
+        const previous = plan.drafts[active];
+        const selected = previous ? event.drafts.findIndex(draft => draft.id === previous.id) : -1;
+        const previousDetail = selected < 0 ? undefined : saveDetail();
+        const focus = nav.contains(document.activeElement);
+        plan.drafts = event.drafts;
+        showDrafts(Math.max(0, selected), focus, previousDetail);
+    }
 }
 window.addEventListener('message', ({data}) => {
     if (data.type === 'scopes') {
+        generation?.dispose();
+        generation = undefined;
+        plan = undefined;
+        root.classList.remove('waiting-for-draft');
         root.classList.add('choosing-scope');
         scope = scopeView(data, (type, fields) => {
-            if (type === 'choose' || type === 'manual') scope.status.textContent = data.labels.pending;
+            if (type === 'manual') scope.status.textContent = data.labels.pending;
             send(type, fields);
+            if (type === 'choose') showWaiting(data.labels);
         }, action => vscode.postMessage(action));
         model = scope.model;
         root.replaceChildren(scope.form, errorBox());
         scope.title.focus({preventScroll: true});
     }
+    if (data.type === 'generation') startGeneration(data);
+    if (data.type === 'progress' && generation) updateGeneration(data.event);
     if (data.type === 'files') scope?.showFiles(data);
-    if (data.type === 'model' && model) {
-        model.textContent = data.model || model.title;
-        model.setAttribute('aria-label', model.title + (data.model ? ' · ' + data.model : ''));
+    if (data.type === 'model') {
+        if (generation && plan) plan.model = data.model;
+        for (const control of new Set([model, scope?.model])) {
+            if (!control) continue;
+            control.textContent = data.model || control.title;
+            control.setAttribute('aria-label', control.title + (data.model ? ' · ' + data.model : ''));
+        }
+    }
+    if (data.type === 'rewordText' && pending === 'reword' && data.revision === plan?.revision && data.index === active) {
+        rewordPreview += data.delta;
+        detail.querySelector('.message').value = rewordPreview;
     }
     if (data.type === 'plan') renderPlan(data);
     if (data.type === 'error') { alert.textContent = data.text; alert.hidden = false; }
-    if (data.type === 'idle') { pending = undefined; busy = false; if (scope) scope.status.textContent = ''; updateControls(); }
+    if (data.type === 'idle') {
+        if (pending === 'reword') {
+            detail.querySelector('.message').value = plan.drafts[active].message;
+            rewordPreview = '';
+        }
+        pending = undefined;
+        busy = false;
+        const interrupted = !!generation;
+        if (interrupted && scope) {
+            generation.dispose();
+            generation = undefined;
+            plan = undefined;
+            model = scope.model;
+            root.classList.remove('waiting-for-draft');
+            root.classList.add('choosing-scope');
+            root.replaceChildren(scope.form, alert);
+        }
+        if (scope) scope.status.textContent = '';
+        updateControls();
+        if (interrupted) scope?.focusGenerate();
+    }
 });
 vscode.postMessage({type: 'ready'});

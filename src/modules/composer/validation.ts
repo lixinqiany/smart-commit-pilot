@@ -3,10 +3,11 @@ import { access, mkdir, symlink } from 'node:fs/promises';
 import { join, posix, sep } from 'node:path';
 import { env, l10n } from 'vscode';
 import { ComposerGit, withScratch } from './git';
-import { Group, Plan } from './plan';
+import { Draft, Group, Plan } from './plan';
 
 interface Issue { file?: string; line?: number; code: string; message: string; missing?: string }
 export interface DraftCheck { checks: string[]; issues: Issue[]; existing: number; skipped?: string }
+export type CheckProgress = (index: number, result?: DraftCheck) => void;
 type Result = Omit<DraftCheck, 'existing'>;
 const manifests = /(^|\/)(package|composer)\.json$/;
 
@@ -77,13 +78,15 @@ export class SequenceValidator {
         this.cache.set(tree, result);
         return result;
     }
-    async verify(plan: Plan, report: (text: string) => void): Promise<Plan> {
+    async verify(plan: Plan, report: (text: string) => void, onCheck?: CheckProgress): Promise<Plan> {
+        if (!this.cache.has(plan.snapshot.base)) { report(l10n.t('Checking the starting tree…')); }
         const base = await this.result(plan.snapshot.base);
-        const drafts = [];
-        for (const [i, draft] of plan.drafts.entries()) {
+        const verifyDraft = async (draft: Draft, index: number): Promise<Draft> => {
             this.signal.throwIfAborted();
-            report(l10n.t('Checking commit {0} of {1}…', i + 1, plan.drafts.length));
+            if (onCheck) { onCheck(index); }
+            else { report(l10n.t('Checking commit {0} of {1}…', index + 1, plan.drafts.length)); }
             const result = await this.result(draft.tree);
+            this.signal.throwIfAborted();
             const counts = new Map<string, number>();
             for (const issue of base.issues) { const id = key(issue); counts.set(id, (counts.get(id) ?? 0) + 1); }
             const issues = result.issues.filter(issue => {
@@ -92,8 +95,30 @@ export class SequenceValidator {
                 counts.set(id, count - 1);
                 return false;
             });
-            drafts.push({ ...draft, check: { ...result, issues, existing: result.issues.length - issues.length } });
-        }
+            const check = { ...result, issues, existing: result.issues.length - issues.length };
+            onCheck?.(index, check);
+            return { ...draft, check };
+        };
+
+        const drafts = new Array<Draft>(plan.drafts.length);
+        // Independent trees can be checked together. Limit concurrent TypeScript processes.
+        const workers = onCheck ? 2 : 1;
+        let next = 0;
+        let failed = false;
+        const worker = async () => {
+            try {
+                while (!failed && next < plan.drafts.length) {
+                    const index = next++;
+                    drafts[index] = await verifyDraft(plan.drafts[index], index);
+                }
+            } catch (error) {
+                failed = true;
+                throw error;
+            }
+        };
+        const settled = await Promise.allSettled(Array.from({ length: workers }, worker));
+        const rejected = settled.find(result => result.status === 'rejected');
+        if (rejected) { throw rejected.reason; }
         return { ...plan, drafts };
     }
 }

@@ -7,6 +7,22 @@ Group related changes under Unreleased during development and assign one version
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-26
+
+### Added
+
+- Stream generated commit messages and show split drafts as they arrive in Composer. Show progress and elapsed time while planning and checking drafts.
+- Record structured task logs in the Smart Git Pilot output channel, including per-call token usage and per-task totals.
+
+### Changed
+
+- Keep planned draft groups distinct during generation and automatic repair. Reuse the last verified split plan when repeating the same input.
+- Use a split-arrow icon for Composer with the same light and dark colors as the other repository actions.
+
+### Fixed
+
+- Continue local branch cleanup when the selected remote branch is already gone, and report the remote and local outcomes separately.
+
 ## [0.3.1] - 2026-11-26
 
 ### Added

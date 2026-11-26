@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { GitService } from './GitService';
 import { Configurator } from '../configuration/Configurator';
+import { logTokenUsage } from '../adaptor/logTokenUsage';
 import { AdaptorFactory } from '../adaptor/AdaptorFactory';
 import { Venders } from '../configuration/configuration.constants';
 import { MessageRole } from '../adaptor/unified-protocols/request';
@@ -62,17 +63,7 @@ export class CommitGenerator {
                         messages: [{ role: MessageRole.USER, content: diff }],
                     });
                     this.configurator.log(t('Response parts received: {0}.', response.content.length));
-                    if (response.usage) {
-                        this.configurator.log(
-                            t('Token usage: {0} input, {1} output.', response.usage.input_tokens, response.usage.output_tokens)
-                        );
-                        const details = response.usage.input_tokens_details;
-                        if ('cache_write_tokens' in details) {
-                            this.configurator.log(t('Prompt cache tokens: {0} read, {1} written.',
-                                details.cached_tokens ?? t('not reported'),
-                                details.cache_write_tokens ?? t('not reported')));
-                        }
-                    }
+                    logTokenUsage(response.usage, line => this.configurator.log(line));
 
                     const message = response.content
                         .filter((part): part is { type: 'text'; text: string } => part.type === 'text')

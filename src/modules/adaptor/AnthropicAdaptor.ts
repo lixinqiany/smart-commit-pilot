@@ -30,8 +30,8 @@ export class AnthropicAdaptor extends BaseAdaptor {
         };
     }
 
-    protected async send(request: MessageCreateParamsNonStreaming): Promise<Message> {
-        return this.#client.messages.create(request);
+    protected async send(request: MessageCreateParamsNonStreaming, signal?: AbortSignal): Promise<Message> {
+        return this.#client.messages.create(request, { signal });
     }
 
     protected toUnifiedResponse(response: Message): MessageCreationResponse {

@@ -34,5 +34,6 @@
   "branches.contributors": "贡献者",
   "branches.contributorsActive": "贡献者（已选中）",
   "branches.allContributors": "显示所有分支的贡献者",
-  "branches.currentContributors": "仅显示当前分支的贡献者"
+  "branches.currentContributors": "仅显示当前分支的贡献者",
+  "commands.composeCommits": "拆分改动为多个提交…"
 }

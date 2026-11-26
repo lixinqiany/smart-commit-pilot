@@ -71,11 +71,16 @@ With avatars enabled, VS Code can request an image from GitHub for a GitHub nore
 | `Smart Git Pilot: Select Model` | Re-fetch and choose a model for the currently configured provider. |
 | `Smart Git Pilot: Setup Prompt` | Opens the `smartCommitPilot.prompt` instructions in a multi-line editor; save (Cmd/Ctrl+S) to apply. |
 | `Smart Git Pilot: Generate Commit Message` | Generates a commit message from staged changes (also available as the icon in the Source Control title bar). |
+| `Smart Git Pilot: Split Changes into Commits…` | Review AI-grouped changes and edit each message before creating the commits. Available beside Generate Commit Message in Source Control, or with Ctrl+K Ctrl+Shift+G (Cmd+K Cmd+Shift+G on macOS). |
 | `Smart Git Pilot: Toggle Current Line Blame` | Enables or disables the current-line commit hint for the workspace. |
+
+## Splitting changes into commits
+
+Choose **Staged changes** to preserve unstaged edits, or **Working tree** to use the current files on disk, including untracked files. If a file is partially staged, this option uses its working-tree version. Select a draft to review its file diffs and edit its full message. **Regroup with AI** accepts additional instructions. **Create commits…** presents a final confirmation. Git runs hooks and signing in a temporary worktree before the reviewed chain is applied to your branch.
 
 ## Known Issues
 
-- Requires at least one staged change — Smart Git Pilot won't generate a message from unstaged or working-tree changes.
+- Generate Commit Message requires at least one staged change — Smart Git Pilot won't generate a message from unstaged or working-tree changes.
 - Very large diffs may be truncated or produce lower-quality messages depending on the selected model's context window.
 - Current line blame requires the Git executable configured for VS Code, or `git` available on your PATH.
 

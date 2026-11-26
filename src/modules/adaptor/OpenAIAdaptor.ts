@@ -51,8 +51,8 @@ export class OpenAIAdaptor extends BaseAdaptor {
         return body;
     }
 
-    protected async send(request: ResponseCreateParamsNonStreaming): Promise<OpenAIResponse> {
-        return this.#client.responses.create(request);
+    protected async send(request: ResponseCreateParamsNonStreaming, signal?: AbortSignal): Promise<OpenAIResponse> {
+        return this.#client.responses.create(request, { signal });
     }
 
     protected toUnifiedResponse(response: OpenAIResponse): MessageCreationResponse {

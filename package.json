@@ -50,6 +50,12 @@
         }
       },
       {
+        "command": "smart-commit-pilot.composeCommits",
+        "title": "%commands.composeCommits%",
+        "category": "Smart Git Pilot",
+        "icon": "$(split-horizontal)"
+      },
+      {
         "command": "smart-commit-pilot.configurePrompt",
         "title": "%commands.configurePrompt%",
         "category": "Smart Git Pilot"
@@ -216,7 +222,12 @@
         {
           "command": "smart-commit-pilot.generateCommitMessage",
           "when": "scmProvider == git",
-          "group": "navigation"
+          "group": "navigation@10"
+        },
+        {
+          "command": "smart-commit-pilot.composeCommits",
+          "when": "scmProvider == git",
+          "group": "navigation@11"
         }
       ],
       "view/title": [
@@ -470,7 +481,15 @@
           "fontCharacter": "\\E001"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "smart-commit-pilot.composeCommits",
+        "key": "ctrl+k ctrl+shift+g",
+        "mac": "cmd+k cmd+shift+g",
+        "when": "gitOpenRepositoryCount > 0"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",

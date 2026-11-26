@@ -13,9 +13,9 @@ export abstract class BaseAdaptor {
         this.#provider = provider;
     }
 
-    async createMessage(body: MessageCreationRequest): Promise<MessageCreationResponse> {
+    async createMessage(body: MessageCreationRequest, signal?: AbortSignal): Promise<MessageCreationResponse> {
         const sdkRequest = this.toAdaptorSpecifiedRequest(body);
-        const sdkResponse = await this.send(sdkRequest);
+        const sdkResponse = await this.send(sdkRequest, signal);
         return this.toUnifiedResponse(sdkResponse);
     }
 
@@ -27,7 +27,7 @@ export abstract class BaseAdaptor {
     /**
      * @description 使用厂商原生请求体发起真实的 API 调用。
      */
-    protected abstract send(request: unknown): Promise<unknown>;
+    protected abstract send(request: unknown, signal?: AbortSignal): Promise<unknown>;
 
     /**
      * @description 将厂商原生响应体转换为统一协议的响应格式。

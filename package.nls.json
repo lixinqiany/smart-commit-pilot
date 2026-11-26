@@ -34,5 +34,6 @@
   "branches.contributors": "Contributors",
   "branches.contributorsActive": "Contributors (Selected)",
   "branches.allContributors": "Show Contributors from All Branches",
-  "branches.currentContributors": "Show Contributors from Current Branch"
+  "branches.currentContributors": "Show Contributors from Current Branch",
+  "commands.composeCommits": "Split Changes into Commits…"
 }

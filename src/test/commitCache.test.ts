@@ -214,12 +214,23 @@ suite('Commit model calls', () => {
             assert.equal(requests.length, 0);
             assert.equal(composition.model, '');
             replies = [groups(['docs', 1])];
-            const quick = await composition.start('working', '', false, signal);
+            bufferedGateway = true;
+            const fallback: DraftProgress[] = [];
+            const quick = await composition.start('working', '', false, signal, 'quick', event => fallback.push(event));
+            assert.deepEqual(fallback.find(event => event.type === 'replace'), {
+                type: 'replace', drafts: [{ id: '1', message: 'docs', paths: ['z.md'] }],
+            });
+            const groupingProgress = fallback.flatMap(event => event.type === 'status' && event.step === 'grouping' ? [event.text] : []);
+            assert.deepEqual(groupingProgress, [
+                vscode.l10n.t('Sending the grouping request and waiting for a response…'),
+                vscode.l10n.t('This response arrives all at once. Waiting for the complete result…'),
+            ]);
             assert.equal(requests.length, 1);
             assert.equal(quick?.session?.deep, false);
             assert.equal(requests[0].body.model, splitModel);
             assert.equal(JSON.stringify(requests[0].body).includes('prompt_cache_breakpoint'), false);
 
+            bufferedGateway = false;
             await writeFile(join(root, 'caller.ts'), "export { shared } from './shared';");
             await writeFile(join(root, 'shared.ts'), 'export const shared = 1;');
             requests.length = 0;
@@ -262,6 +273,39 @@ suite('Commit model calls', () => {
         } finally { await rm(root, { recursive: true, force: true }); }
     });
 
+    test('Reuses verified draft boundaries on an identical split and replans when the guidance or diff changes', async function () {
+        this.timeout(30000);
+        const root = await mkdtemp(join(tmpdir(), 'pilot-repeat-split-'));
+        try {
+            const git = new ComposerGit(root, 'git');
+            await git.run(['init', '-q', '-b', 'main']);
+            for (const name of ['a', 'b', 'c', 'd', 'e']) { await writeFile(join(root, name), name); }
+            const composition = new Composition(git, {
+                getModel: () => 'model', setupModel: async () => undefined, getPrompt: () => '', log() {},
+                getBaseURLandSecrets: async () => ({ provider: Venders.OpenAI, baseUrl, apiKey: 'test' }),
+            });
+            const five = [[1], [2], [3], [4], [5]], two = [[1, 2], [3, 4, 5]];
+            const analysis = (groups: number[][]) => JSON.stringify({ drafts: groups.map(([id]) =>
+                ({ purpose: 'Feature ' + id, paths: [], dependsOn: [], anchorEdit: id })) });
+            const drafts = (groups: number[][]) => JSON.stringify({ commits: groups.map(edits => ({ message: 'Feature ' + edits[0], edits })) });
+            const order = (groups: number[][]) => JSON.stringify({ order: groups.map((_, i) => i + 1) });
+            async function run(guidance: string, answers: string[]) {
+                requests.length = 0;
+                replies = [...answers];
+                const plan = await composition.start('working', guidance, false, new AbortController().signal);
+                assert.equal(requests.length, answers.length);
+                assert.ok(plan);
+                return plan.drafts.map(draft => draft.edits);
+            }
+            assert.deepEqual(await run('', [analysis(five), drafts(five), order(five)]), five);
+            assert.deepEqual(await run('', [drafts(two), drafts(five), order(five)]), five);
+            assert.deepEqual(await run('Make two commits', [analysis(two), drafts(two), order(two)]), two);
+            await writeFile(join(root, 'f'), 'additional change');
+            const updated = [[1, 2], [3, 4, 5, 6]];
+            assert.deepEqual(await run('Make two commits', [analysis(updated), drafts(updated), order(updated)]), updated);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+
     for (const provider of [Venders.OpenAI, Venders.Anthropic]) {
         test(provider + ' streams into SCM, restores interrupted output and respects manual edits', async function () {
             this.timeout(15000);
@@ -294,7 +338,98 @@ suite('Commit model calls', () => {
             }
         });
 
+        test(provider + ' exposes the first draft before the server sends the second', async function () {
+            this.timeout(15000);
+            const root = await mkdtemp(join(tmpdir(), 'pilot-stream-'));
+            const first = '{"commits":[{"message":"Fix } in a string","edits":[1]}';
+            const tail = ',{"message":"Update guide","edits":[2]}]}';
+            let finish: () => void;
+            let interrupt: () => void;
+            let releaseFirst: () => void;
+            let waitForConnection = true;
+            streamReply = res => {
+                const stream = modelStream(res, provider, 'model', { input_tokens: 100, output_tokens: 20 }, waitForConnection);
+                interrupt = () => res.end();
+                releaseFirst = () => {
+                    stream.write(first.slice(0, 23));
+                    stream.write(first.slice(23));
+                };
+                if (!waitForConnection) { releaseFirst(); }
+                finish = () => { stream.write(tail); stream.finish(); };
+            };
+            try {
+                const git = new ComposerGit(root, 'git');
+                await git.run(['init', '-q']);
+                await writeFile(join(root, 'a'), 'one');
+                await writeFile(join(root, 'b'), 'two');
+                const composition = new Composition(git, {
+                    getModel: () => 'model', setupModel: async () => undefined, getPrompt: () => '', log() {},
+                    getBaseURLandSecrets: async () => ({ provider, baseUrl, apiKey: 'test' }),
+                });
+                const events: DraftProgress[] = [];
+                const t = vscode.l10n.t;
+                requests.length = 0;
+                const result = await composition.start('working', 'two commits', false, new AbortController().signal, 'quick', event => {
+                    events.push(event);
+                    if (event.type === 'status' && event.text === t('Waiting for draft text…')) { releaseFirst(); }
+                    if (event.type === 'append' && event.draft.paths.includes('a')) { finish(); }
+                });
+                const steps = events.flatMap(event => {
+                    if (event.type === 'status') { return [event.text]; }
+                    if (event.type === 'append') { return [event.draft.message]; }
+                    return [];
+                });
+                assert.deepEqual(steps, [
+                    t('Reading selected changes…'),
+                    t('Read {0} changed files.', 2),
+                    t('Sending the grouping request and waiting for a response…'),
+                    t('Waiting for draft text…'),
+                    t('Receiving draft groups…'),
+                    'Fix } in a string',
+                    'Update guide',
+                    t('Preparing draft diffs ({0}/{1})…', 0, 2),
+                    t('Preparing draft diffs ({0}/{1})…', 1, 2),
+                    t('Checking the starting tree…'),
+                    t('Draft checks complete: {0}/{1}', 0, 2),
+                    t('Draft checks complete: {0}/{1}', 1, 2),
+                    t('Draft checks complete: {0}/{1}', 2, 2),
+                ]);
+                const status = events.filter(event => event.type === 'status');
+                assert.deepEqual(status.flatMap(event => event.step ? [event.step] : []),
+                    ['changes', 'changes', 'grouping', 'grouping', 'grouping']);
+                const timestamps = status.map(event => event.at);
+                assert.ok(timestamps.every((time, index) => index === 0 || time >= timestamps[index - 1]));
+                const checks = events.filter(event => event.type === 'check');
+                assert.deepEqual(checks.slice(0, 2).map(event => [event.index, event.result]), [[0, undefined], [1, undefined]]);
+                assert.deepEqual(checks.filter(event => event.result).map(event => event.index).sort(), [0, 1]);
+                assert.deepEqual(events.filter(e => e.type === 'append').map(e => e.draft), [
+                    { id: '1', message: 'Fix } in a string', paths: ['a'] }, { id: '2', message: 'Update guide', paths: ['b'] },
+                ]);
+                assert.deepEqual(result?.drafts.map(d => d.message), ['Fix } in a string', 'Update guide']);
+                assert.deepEqual(events.filter(e => e.type === 'diff').map(e => e.files[0].patch),
+                    result?.drafts.map(d => d.files[0].patch));
+                assert.equal(requests.length, 1);
+                waitForConnection = false;
+                const cancelled: DraftProgress[] = [];
+                const abort = new AbortController();
+                const stopped = await composition.start('working', '', false, abort.signal, 'quick', event => {
+                    cancelled.push(event);
+                    if (event.type === 'append') { abort.abort(); }
+                });
+                assert.equal(stopped, undefined);
+                assert.equal(cancelled.filter(event => event.type === 'append').length, 1);
+                assert.ok(!cancelled.some(event => event.type === 'diff'));
+
+                // A clean HTTP EOF after a complete draft is still an incomplete provider response.
+                await assert.rejects(composition.start('working', '', false, new AbortController().signal, 'quick', event => {
+                    if (event.type === 'append') { interrupt(); }
+                }));
+                assert.equal(requests.length, 3);
+                assert.equal((await git.headState()).head, '');
+            } finally { await rm(root, { recursive: true, force: true }); }
+        });
     }
+
     test('Falls back once when a compatible endpoint explicitly rejects streaming', async () => {
         streamReply = res => {
             res.writeHead(400, { 'Content-Type': 'application/json' });

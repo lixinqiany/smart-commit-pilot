@@ -6,14 +6,14 @@ import { Configurator } from '../configuration/Configurator';
 import { Venders } from '../configuration/configuration.constants';
 import { messageRequest } from '../git/messageRequest';
 import { collectChanges } from './changes';
+import { DraftPreview, DraftProgress, Report } from './draftPreview';
 import { assertUnlockedRange, draftSource } from './curation';
 import { ComposerGit, Scope, withScratch } from './git';
 import { buildPlan, Group, Plan } from './plan';
 import { Ask, chooseDepth, Depth, PlannerContext, planGroups, PlanningSession } from './planner';
-import { dependencyOrder, intermediateErrors, SequenceValidator } from './validation';
+import { CheckProgress, dependencyOrder, intermediateErrors, SequenceValidator } from './validation';
 
 const t = vscode.l10n.t;
-type Report = (text: string) => void;
 
 async function withProgress<T>(signal: AbortSignal, run: (signal: AbortSignal, report: Report) => Promise<T>): Promise<T | undefined> {
     if (signal.aborted) { return; }
@@ -33,6 +33,8 @@ async function withProgress<T>(signal: AbortSignal, run: (signal: AbortSignal, r
 }
 
 export class Composition {
+    private lastAnalysis?: { key: string; analysis: NonNullable<PlanningSession['analysis']> };
+
     constructor(private readonly git: ComposerGit, private readonly config: Pick<Configurator, 'getModel' | 'setupModel' | 'getPrompt' | 'getBaseURLandSecrets' | 'log'>) {}
     get model(): string { return this.config.getModel('composer.model'); }
     selectModel() { return this.config.setupModel('composer.model'); }
@@ -50,22 +52,58 @@ export class Composition {
         return files;
     }
 
-    async start(scope: Scope, guidance: string, manual: boolean, signal: AbortSignal, depth: Depth = 'auto') {
-        return withProgress(signal, async (signal, report) => {
+    async start(scope: Scope, guidance: string, manual: boolean, signal: AbortSignal, depth: Depth = 'auto',
+        onProgress?: (event: DraftProgress) => void) {
+        return withProgress(signal, async (signal, notification) => {
+            const publish = (event: DraftProgress) => { if (!signal.aborted) { onProgress?.(event); } };
+            const report: Report = (text, step) => {
+                notification(text);
+                publish({ type: 'status', text, at: performance.now(), ...(step ? { step } : {}) });
+            };
+            report(t('Reading selected changes…'), 'changes');
             const snapshot = await withScratch(dir => this.git.capture(scope, join(dir, 'index')));
             if (snapshot.base === snapshot.target) { throw new Error(t('No changes in the selected scope.')); }
-            const files = await collectChanges(this.git, snapshot);
-            const build = (groups: Group[]) => buildPlan(this.git, snapshot, files, groups);
+            signal.throwIfAborted();
+            const files = await collectChanges(this.git, snapshot, signal);
             const validator = new SequenceValidator(this.git, signal);
             if (manual) {
-                return validator.verify(await build([{ message: '', edits: files.flatMap(f => f.edits.map(e => e.id)) }]), report);
+                const edits = files.flatMap(file => file.edits.map(edit => edit.id));
+                return validator.verify(await buildPlan(this.git, snapshot, files, [{ message: '', edits }]), report);
             }
+            report(t('Read {0} changed files.', files.length), 'changes');
+            if (!this.model) { report(t('Selecting a split model…'), 'model'); }
             const connection = await this.connect(signal);
             if (!connection) { return; }
             const { model, ask } = connection;
             const ctx = { model, convention: this.config.getPrompt(), files, guidance };
-            const result = await planGroups(ctx, { deep: chooseDepth(files, depth), instructions: [] }, ask, report);
-            return this.review(await build(result.groups), result.session, ctx, ask, validator, report);
+            const preview = onProgress ? new DraftPreview(files, publish) : undefined;
+            const deep = chooseDepth(files, depth);
+            const key = JSON.stringify([snapshot.base, snapshot.target, scope, connection.provider, connection.baseUrl, model, ctx.convention, guidance]);
+            const analysis = deep && this.lastAnalysis?.key === key ? this.lastAnalysis.analysis : undefined;
+            // Retry a failed or interrupted attempt with a fresh analysis next time.
+            if (deep) { this.lastAnalysis = undefined; }
+            const result = await planGroups(ctx, { deep, analysis, instructions: [] }, ask, report, { preview });
+            signal.throwIfAborted();
+            const total = result.groups.length;
+            const reportDiffs = (ready: number) => report(t('Preparing draft diffs ({0}/{1})…', ready, total));
+            reportDiffs(0);
+            const plan = await buildPlan(this.git, snapshot, files, result.groups, (draft, index) => {
+                signal.throwIfAborted();
+                if (onProgress) { publish({ type: 'diff', index, files: draft.files.map(({ path, patch }) => ({ path, patch })) }); }
+                if (index + 1 < total) { reportDiffs(index + 1); }
+            });
+            let checked = 0;
+            const onCheck: CheckProgress | undefined = onProgress ? (index, result) => {
+                publish({ type: 'check', index, result });
+                if (result) { checked++; }
+                if (result || index === 0) { report(t('Draft checks complete: {0}/{1}', checked, total)); }
+            } : undefined;
+            const reviewed = await this.review(plan, result.session, ctx, ask, validator, report, onCheck);
+            if (result.session.analysis && !signal.aborted && !intermediateErrors(reviewed).length &&
+                reviewed.drafts.every(draft => draft.check && !draft.check.skipped)) {
+                this.lastAnalysis = { key, analysis: result.session.analysis };
+            }
+            return reviewed;
         });
     }
 
@@ -83,14 +121,20 @@ export class Composition {
         });
     }
 
-    private async review(plan: Plan, session: PlanningSession, ctx: PlannerContext, ask: Ask, validator: SequenceValidator, report: Report) {
-        const verify = async (groups: Group[]) => validator.verify(await buildPlan(this.git, plan.snapshot, plan.source, groups), report);
-        let reviewed: Plan = await validator.verify(plan, report);
+    private async review(plan: Plan, session: PlanningSession, ctx: PlannerContext, ask: Ask, validator: SequenceValidator,
+        report: Report, onCheck?: CheckProgress) {
+        const verify = async (groups: Group[]) => {
+            const candidate = await buildPlan(this.git, plan.snapshot, plan.source, groups);
+            if (onCheck) { report(t('Checking the adjusted sequence…')); }
+            return validator.verify(candidate, onCheck ? () => {} : report);
+        };
+        let reviewed: Plan = await validator.verify(plan, report, onCheck);
         let errors = intermediateErrors(reviewed);
         // Accept a local repair only after the new intermediate trees improve on the old ones.
         for (let i = 0; errors.length && i < plan.drafts.length; i++) {
             const order = dependencyOrder(reviewed);
             if (!order) { break; }
+            report(t('Adjusting commit order…'));
             const candidate = await verify(order);
             const remaining = intermediateErrors(candidate);
             if (candidate.drafts.some(d => d.check?.skipped) || remaining.length >= errors.length) { break; }
@@ -149,7 +193,7 @@ export class Composition {
         });
     }
 
-    private async connect(signal: AbortSignal): Promise<{ model: string; ask: Ask } | undefined> {
+    private async connect(signal: AbortSignal): Promise<{ model: string; provider: string; baseUrl: string; ask: Ask } | undefined> {
         const vendor = await this.config.getBaseURLandSecrets();
         if (!vendor) { throw new Error(t('Smart Git Pilot: configure a provider first.')); }
         signal.throwIfAborted();
@@ -163,7 +207,7 @@ export class Composition {
             signal.throwIfAborted();
             return response.content.map(part => part.text).join('\n');
         };
-        return { model, ask };
+        return { model, provider: vendor.provider, baseUrl: vendor.baseUrl, ask };
     }
 }
 

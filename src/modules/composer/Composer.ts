@@ -12,11 +12,19 @@ const t = vscode.l10n.t;
 
 export class Composer {
     private readonly panels = new Map<string, ReviewPanel>();
+    private readonly compositions = new Map<string, Composition>();
+    private readonly repositoryClosed: vscode.Disposable;
 
     constructor(private readonly extension: vscode.Extension<unknown>, private readonly service: GitService,
-        private readonly config: Configurator) {}
+        private readonly config: Configurator) {
+        this.repositoryClosed = service.api.onDidCloseRepository(repo => this.compositions.delete(repo.rootUri.fsPath));
+    }
 
-    dispose(): void { for (const panel of this.panels.values()) { panel.dispose(); } }
+    dispose(): void {
+        this.repositoryClosed.dispose();
+        for (const panel of this.panels.values()) { panel.dispose(); }
+        this.compositions.clear();
+    }
 
     private async repository(root?: vscode.Uri): Promise<Repository | undefined> {
         if (root || this.service.api.repositories.length <= 1) { return this.service.getRepository(root); }
@@ -34,10 +42,15 @@ export class Composer {
             const existing = this.panels.get(path);
             if (existing) { existing.reveal(); return; }
             const git = new ComposerGit(path, this.service.api.git.path);
+            let composition = this.compositions.get(path);
+            if (!composition) {
+                composition = new Composition(git, this.config);
+                this.compositions.set(path, composition);
+            }
             const heading = { product: this.extension.packageJSON.displayName as string, repo: basename(path),
                 showRepo: this.service.api.repositories.length > 1 };
             const panel = new ReviewPanel(this.extension.extensionUri, heading, this.service.hasStagedChanges(repo),
-                new Composition(git, this.config),
+                composition,
                 async reviewed => {
                     const sign = vscode.workspace.getConfiguration('git', repo.rootUri).get<boolean>('enableCommitSigning', false);
                     await applyPlan(git, reviewed, sign);

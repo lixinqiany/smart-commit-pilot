@@ -53,7 +53,8 @@ export function parseGroups(raw: string, files: ChangedFile[], anchors?: Readonl
     return groups;
 }
 
-export async function buildPlan(git: ComposerGit, snapshot: Snapshot, files: ChangedFile[], groups: Group[]): Promise<Plan> {
+export async function buildPlan(git: ComposerGit, snapshot: Snapshot, files: ChangedFile[], groups: Group[],
+    onDraft?: (draft: Draft, index: number) => void): Promise<Plan> {
     return withScratch(async dir => {
         const index = join(dir, 'index');
         await git.run(['read-tree', snapshot.base], undefined, index);
@@ -90,7 +91,9 @@ export async function buildPlan(git: ComposerGit, snapshot: Snapshot, files: Cha
                 throw new Error(l10n.t('Could not build an exact diff preview.'));
             }
             const previews = paths.map((path, i) => ({ path, patch: patches[i], ...selections.get(path)! }));
-            drafts.push({ message: group.message, edits: group.edits, locked: group.locked, tree, files: previews });
+            const draft = { message: group.message, edits: group.edits, locked: group.locked, tree, files: previews };
+            drafts.push(draft);
+            onDraft?.(draft, drafts.length - 1);
             previous = tree;
         }
         if (previous !== snapshot.target) { throw new Error(l10n.t('The proposed commits do not reproduce the selected changes.')); }

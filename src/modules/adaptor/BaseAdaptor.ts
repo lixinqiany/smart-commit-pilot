@@ -1,6 +1,6 @@
 import { Venders } from '../configuration/configuration.constants';
 import { MessageCreationRequest } from './unified-protocols/request';
-import { MessageCreationResponse } from './unified-protocols/response';
+import { MessageCreationResponse, Usage } from './unified-protocols/response';
 
 function rejectsStreaming(err: unknown): boolean {
     if (!(err instanceof Error) || !('status' in err) || ![400, 422, 501].includes(Number(err.status))) { return false; }
@@ -10,6 +10,13 @@ function rejectsStreaming(err: unknown): boolean {
 
 export type ModelProgress = 'connected' | 'buffered';
 export type OnModelProgress = (event: ModelProgress) => void;
+
+export class ModelResponseError extends Error {
+    constructor(message: string, readonly usage: Usage | null) {
+        super(message);
+        this.name = 'ModelResponseError';
+    }
+}
 
 export abstract class BaseAdaptor<NativeRequest = unknown, NativeResponse = unknown> {
     readonly #baseURL: string;
@@ -42,8 +49,12 @@ export abstract class BaseAdaptor<NativeRequest = unknown, NativeResponse = unkn
             report('buffered');
             response = await this.sendBuffered(request, signal);
         }
-        signal?.throwIfAborted();
-        return this.toUnifiedResponse(response);
+        const result = this.toUnifiedResponse(response);
+        if (signal?.aborted) {
+            const reason: unknown = signal.reason;
+            throw new ModelResponseError(reason instanceof Error ? reason.message : String(reason), result.usage);
+        }
+        return result;
     }
 
     protected abstract toAdaptorSpecifiedRequest(request: MessageCreationRequest): NativeRequest;

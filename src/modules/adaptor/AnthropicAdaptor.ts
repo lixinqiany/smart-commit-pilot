@@ -55,7 +55,7 @@ export class AnthropicAdaptor extends BaseAdaptor<MessageCreateParamsNonStreamin
             .filter((block): block is TextBlock => block.type === 'text')
             .map((block) => ({ type: 'text' as const, text: block.text }));
 
-        const usage: Usage = {
+        const usage: Usage | null = response.usage ? {
             input_tokens: response.usage.input_tokens,
             input_tokens_details: {
                 cache_creation: response.usage.cache_creation,
@@ -66,7 +66,7 @@ export class AnthropicAdaptor extends BaseAdaptor<MessageCreateParamsNonStreamin
             output_tokens_details: {
                 thinking_tokens: response.usage.output_tokens_details?.thinking_tokens ?? 0,
             },
-        };
+        } : null;
 
         return {
             id: response.id,

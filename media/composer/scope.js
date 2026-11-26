@@ -16,7 +16,7 @@ function fileRow(file, labels) {
     return row;
 }
 
-export function scopeView(data, send, requestFiles) {
+export function scopeView(data, send, postMessage) {
     const l = data.labels;
     let selected = data.choices[0].scope, depth = 'auto', request = 0, busy = false, empty = false;
     const form = el('form', 'scope-picker');
@@ -63,7 +63,7 @@ export function scopeView(data, send, requestFiles) {
         list.replaceChildren();
         list.hidden = true;
         notice.textContent = l.loading;
-        requestFiles({type: 'files', scope: selected, request: ++request});
+        postMessage({type: 'files', scope: selected, request: ++request});
     }
     function showFiles(reply) {
         if (reply.request !== request) return;
@@ -113,5 +113,7 @@ export function scopeView(data, send, requestFiles) {
     status.setAttribute('role', 'status');
     form.append(heading, changes, composer, status);
     readFiles();
-    return { form, model: settings.model, title, status, showFiles, setBusy };
+    return { form, model: settings.model, title, status, showFiles, setBusy,
+        focusGenerate: () => generate.focus({preventScroll: true}),
+    };
 }

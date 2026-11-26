@@ -263,7 +263,10 @@ suite('Commit model calls', () => {
             assert.deepEqual(requests.map(prefix), Array(5).fill(prefix(requests[0])));
             assert.deepEqual(revised.drafts[1], deep.drafts[1]);
             assert.equal(revised.drafts[2].message, 'new docs title');
-            const reworded = await composition.reword(revised, 0, signal);
+            const deltas: string[] = [];
+            const reworded = await composition.reword(revised, 0, signal, delta => deltas.push(delta));
+            assert.equal(deltas.join(''), subject);
+            assert.ok(requests.every(r => r.body.stream === true));
             assert.equal(reworded?.drafts[0].message, subject);
             assert.ok(requests.every(r => r.body.model === splitModel));
             assert.equal(pickCount, 2);

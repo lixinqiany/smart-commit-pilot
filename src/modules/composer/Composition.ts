@@ -172,13 +172,14 @@ export class Composition {
         });
     }
 
-    async reword(plan: Plan, index: number, signal: AbortSignal) {
+    async reword(plan: Plan, index: number, signal: AbortSignal, onText?: (delta: string) => void) {
         assertUnlockedRange(plan.drafts, index);
         return withProgress(signal, async signal => {
             const draft = plan.drafts[index];
             const connection = await this.connect(signal);
             if (!connection) { return; }
-            const message = await connection.ask(messageRequest(connection.model, draft.files.map(f => f.patch).join(''), this.config.getPrompt()));
+            const request = messageRequest(connection.model, draft.files.map(f => f.patch).join(''), this.config.getPrompt());
+            const message = await connection.ask(request, onText);
             if (!message.trim()) { throw new Error(t('Enter a commit message.')); }
             const drafts = [...plan.drafts];
             drafts[index] = { ...draft, message: message.trim() };

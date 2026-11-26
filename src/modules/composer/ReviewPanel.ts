@@ -30,6 +30,10 @@ export class ReviewPanel {
         const resources = vscode.Uri.joinPath(extensionUri, 'media', 'composer');
         this.panel = vscode.window.createWebviewPanel('smartGitPilot.commitReview', 'Composer',
             vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [resources] });
+        this.panel.iconPath = {
+            light: vscode.Uri.joinPath(extensionUri, 'images', 'composer-light.svg'),
+            dark: vscode.Uri.joinPath(extensionUri, 'images', 'composer-dark.svg'),
+        };
         const modelSetting = vscode.workspace.onDidChangeConfiguration(event => {
             if (event.affectsConfiguration('smartCommitPilot.composer.model')) {
                 void this.panel.webview.postMessage({ type: 'model', model: this.composition.model });

@@ -2,7 +2,7 @@
   "name": "smart-commit-pilot",
   "displayName": "Smart Git Pilot",
   "description": "%extension.description%",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "michael-yu",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -53,7 +53,10 @@
         "command": "smart-commit-pilot.composeCommits",
         "title": "%commands.composeCommits%",
         "category": "Smart Git Pilot",
-        "icon": "$(split-horizontal)"
+        "icon": {
+          "light": "images/composer-light.svg",
+          "dark": "images/composer-dark.svg"
+        }
       },
       {
         "command": "smart-commit-pilot.configurePrompt",
